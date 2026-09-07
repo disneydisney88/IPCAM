@@ -1,0 +1,10 @@
+{
+  "name": "IPCAM Monitor",
+  "short_name": "IPCAM",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b111c",
+  "theme_color": "#0b111c",
+  "icons": []
+}
+

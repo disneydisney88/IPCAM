@@ -1,0 +1,47 @@
+# Python
+backend/.venv/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.test-tmp/
+
+# Frontend dependencies and transient build data
+frontend/node_modules/
+frontend/.vite/
+
+# Runtime data must stay outside Google Drive and Git
+*.db
+*.db-shm
+*.db-wal
+logs/
+cache/
+snapshots/
+temp/
+*.log
+*.pid
+
+# Local binaries (download from official sources during setup)
+tools/go2rtc/*.exe
+tools/ffmpeg/*.exe
+
+# Secrets and local overrides
+.env
+.env.*
+config/local.env
+.streamlit/secrets.toml
+secrets.toml
+*.secret
+*.token
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+**/*credentials*.json
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/

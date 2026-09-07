@@ -1,0 +1,43 @@
+{
+  "models": [
+    {
+      "brand": "Hikvision",
+      "model_pattern": "DS-2CD2[0-9]{2}[0-9]G[0-2].*",
+      "resolution_mp": 4,
+      "resolution_px": "2688x1520",
+      "sensor": "1/1.8\" Progressive Scan CMOS",
+      "night_vision": "ColorVu (0.0005 Lux / 24/7 Full Color)",
+      "night_vision_short": "ColorVu",
+      "fov": "109° horizontal",
+      "max_fps": 30,
+      "codecs": ["H.265+", "H.265", "H.264+", "H.264"],
+      "features": ["PoE", "MicroSD Slot", "Built-in Mic", "IP67", "Smart Motion Detection 2.0"]
+    },
+    {
+      "brand": "Dahua",
+      "model_pattern": "IPC-HFW5[0-9]{3}T-ASE.*",
+      "resolution_mp": 4,
+      "resolution_px": "2688x1520",
+      "sensor": "1/1.8\" CMOS",
+      "night_vision": "Starlight+ IR 50m",
+      "night_vision_short": "Starlight+",
+      "fov": "112° horizontal",
+      "max_fps": 60,
+      "codecs": ["H.265", "H.264", "MJPEG"],
+      "features": ["PoE", "ePoE", "AI WizMind", "IP67", "IK10", "Audio I/O"]
+    },
+    {
+      "brand": "Uniview",
+      "model_pattern": "IPC[0-9]{4}.*",
+      "resolution_mp": 5,
+      "resolution_px": "2592x1944",
+      "sensor": "1/2.7\" CMOS",
+      "night_vision": "LightHunter IR 30m",
+      "night_vision_short": "LightHunter",
+      "fov": "95° horizontal",
+      "max_fps": 30,
+      "codecs": ["Ultra 265", "H.265", "H.264"],
+      "features": ["PoE", "Built-in Mic", "MicroSD", "IP67"]
+    }
+  ]
+}

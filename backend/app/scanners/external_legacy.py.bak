@@ -1,0 +1,197 @@
+from __future__ import annotations
+
+import asyncio
+import ipaddress
+import re
+import socket
+from typing import Any
+from urllib.parse import urlsplit
+
+import httpx
+
+
+CORE_CCTV_PORTS: tuple[int, ...] = (80, 443, 554, 7447, 8000, 8080, 8443, 8554, 8899, 37777)
+EXTENDED_CCTV_PORTS: tuple[int, ...] = (
+    81, 82, 83, 84, 85, 86, 87, 88, 89,
+    1554, 2554, 3554, 4554, 5554, 6554, 7554, 9554, 10554,
+    8001, 8008, 8081, 8082, 8088, 8090, 8888, 8889, 8890, 9000, 9001, 9002, 9003, 9004, 9005, 9006, 9007, 9008, 9009, 9010,
+    1024, 1025, 1026, 1027, 1028, 1029, 1030, 5000, 5001, 5002, 5003, 5004, 5005,
+    6000, 6001, 6002, 6003, 6004, 6005, 7000, 7001, 7002, 7003, 7004, 7005,
+    37778, 37779, 37780, 37781, 37782, 37783, 37784, 37785, 37786, 37787, 37788, 37789, 37790,
+    34567, 34599,
+)
+
+BRAND_RULES: dict[str, dict[str, list[str]]] = {
+    "Hikvision": {
+        "server": ["Hikvision-Webs", "App-webs", "DNVRS-Webs", "hikvision"],
+        "title": ["hikvision", "hilook", "ezviz", "embedded net dvr"],
+        "realm": ["hikvision", "DS-", "DVR", "NVR"],
+        "rtsp": ["/Streaming/Channels/101", "/Streaming/Channels/102", "/h264/ch1/main/av_stream"],
+        "snapshot": ["/ISAPI/Streaming/channels/101/picture", "/onvif-http/snapshot"],
+    },
+    "Dahua": {
+        "server": ["Dahua", "WEB SERVICE", "NETSurveillance", "DH-"],
+        "title": ["dahua", "imou", "amcrest", "web service"],
+        "realm": ["dahua", "dh-", "General"],
+        "rtsp": ["/cam/realmonitor?channel=1&subtype=0", "/cam/realmonitor?channel=1&subtype=1"],
+        "snapshot": ["/cgi-bin/snapshot.cgi", "/onvif/snapshot"],
+    },
+    "Axis": {
+        "server": ["AXIS Video Server", "Boa/0.94", "Axis"],
+        "title": ["axis", "network camera"],
+        "realm": ["axis", "network camera"],
+        "rtsp": ["/axis-media/media.amp"],
+        "snapshot": ["/axis-cgi/jpg/image.cgi", "/jpg/image.jpg"],
+    },
+    "Uniview": {
+        "server": ["Uniview", "UNV-Web", "Network Video Server"],
+        "title": ["uniview", "unv", "network video server"],
+        "realm": ["unv", "uniview"],
+        "rtsp": ["/media/video1", "/unicast/c1/s0/live"],
+        "snapshot": ["/images/snapshot.jpg", "/cgi-bin/main-cgi?json={\"cmd\":259}"],
+    },
+    "Xiongmai": {
+        "server": ["uc-httpd", "Sofia", "NETSurveillance"],
+        "title": ["netsurveillance", "dvr web client", "ipcam"],
+        "realm": ["sofia", "netsurveillance", "uc-httpd"],
+        "rtsp": ["/live/ch0", "/stream0"],
+        "snapshot": ["/webcapture.jpg?command=snap&channel=1", "/cgi-bin/net_jpeg.cgi?ch=1"],
+    },
+    "Reolink": {
+        "server": ["Reolink", "nginx"],
+        "title": ["reolink", "reolink camera"],
+        "realm": ["reolink"],
+        "rtsp": ["/h264Preview_01_main", "/h265Preview_01_main"],
+        "snapshot": ["/cgi-bin/api.cgi?cmd=Snap&channel=0"],
+    },
+    "Vivotek": {
+        "server": ["VIVOTEK", "Network Camera Vivotek"],
+        "title": ["vivotek", "network camera"],
+        "realm": ["vivotek"],
+        "rtsp": ["/live.sdp", "/live/media.amp"],
+        "snapshot": ["/cgi-bin/viewer/video.jpg"],
+    },
+}
+
+DOC_TEST_NETWORKS: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = (
+    ipaddress.ip_network("192.0.2.0/24"),
+    ipaddress.ip_network("198.51.100.0/24"),
+    ipaddress.ip_network("203.0.113.0/24"),
+)
+
+
+def _parse_target(target: str) -> tuple[str, int | None]:
+    parsed = urlsplit(f"//{target}", scheme="http")
+    host = parsed.hostname or ""
+    if not host:
+        raise ValueError("Invalid target")
+    if parsed.port is not None and not 1 <= parsed.port <= 65535:
+        raise ValueError("Invalid target port")
+    return host, parsed.port
+
+
+def validate_authorized_target(target: str) -> tuple[str, int | None]:
+    host, port = _parse_target(target.strip())
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        if not re.fullmatch(r"[A-Za-z0-9.-]{1,255}", host):
+            raise ValueError("Target must be a single hostname or IP address")
+    else:
+        if (
+            (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast)
+            and not any(ip in network for network in DOC_TEST_NETWORKS)
+        ):
+            raise ValueError("Only public targets are allowed for external scans")
+    return host, port
+
+
+def _resolve_ipv4(host: str) -> str | None:
+    try:
+        return socket.gethostbyname(host)
+    except OSError:
+        return None
+
+
+async def _check_port(host: str, port: int, timeout: float) -> bool:
+    try:
+        reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
+        writer.close()
+        await writer.wait_closed()
+        return True
+    except (OSError, asyncio.TimeoutError):
+        return False
+
+
+async def _probe_http(host: str, port: int, timeout: float) -> dict[str, Any]:
+    scheme = "https" if port in {443, 8443} else "http"
+    url = f"{scheme}://{host}:{port}/"
+    result: dict[str, Any] = {"url": url, "status_code": None, "server": None, "title": None, "realm": None, "auth_required": False}
+    try:
+        async with httpx.AsyncClient(verify=False, timeout=timeout, follow_redirects=True) as client:
+            response = await client.get(url)
+            result["status_code"] = response.status_code
+            result["server"] = response.headers.get("server")
+            if response.status_code == 401:
+                result["auth_required"] = True
+                result["realm"] = response.headers.get("www-authenticate")
+            elif "text/html" in response.headers.get("content-type", ""):
+                match = re.search(r"<title[^>]*>(.*?)</title>", response.text, re.IGNORECASE | re.DOTALL)
+                if match:
+                    result["title"] = re.sub(r"\s+", " ", match.group(1)).strip()
+                result["realm"] = response.headers.get("www-authenticate")
+    except httpx.HTTPError:
+        pass
+    return result
+
+
+def _match_brand(server: str | None, title: str | None, realm: str | None) -> str | None:
+    haystack = " ".join(part.lower() for part in (server, title, realm) if part)
+    for brand, rule in BRAND_RULES.items():
+        tokens = [token.lower() for token in rule["server"] + rule["title"] + rule["realm"]]
+        if any(token and token in haystack for token in tokens):
+            return brand
+    return None
+
+
+def _candidate_uris(brand: str | None, host: str, port: int | None) -> dict[str, list[str]]:
+    if not brand or brand not in BRAND_RULES:
+        return {"rtsp": [f"rtsp://{host}:{port or 554}/live/ch0"], "snapshot": [f"http://{host}:{port or 80}/snapshot.jpg"]}
+    rule = BRAND_RULES[brand]
+    rtsp_port = port or 554
+    http_port = port or 80
+    return {
+        "rtsp": [f"rtsp://{host}:{rtsp_port}{path}" for path in rule["rtsp"]],
+        "snapshot": [f"http://{host}:{http_port}{path}" for path in rule["snapshot"]],
+    }
+
+
+async def scan_external_target(target: str, mode: str = "quick", timeout: float = 1.5) -> dict[str, Any]:
+    host, explicit_port = validate_authorized_target(target)
+    resolved_ip = _resolve_ipv4(host)
+    ports = [explicit_port] if explicit_port else list(CORE_CCTV_PORTS)
+    if mode == "deep":
+        ports = sorted(set(ports).union(EXTENDED_CCTV_PORTS))
+
+    port_checks = await asyncio.gather(*(_check_port(host, port, timeout) for port in ports))
+    open_ports = [port for port, is_open in zip(ports, port_checks) if is_open]
+
+    http_fingerprints = [await _probe_http(host, port, timeout) for port in open_ports if port in {80, 443, 8080, 8443, 8888, 8000, 8001, 8081, 8088, 8090, 9000}]
+    brand = None
+    for probe in http_fingerprints:
+        brand = _match_brand(probe.get("server"), probe.get("title"), probe.get("realm"))
+        if brand:
+            break
+
+    auth_required = any(probe.get("auth_required") for probe in http_fingerprints)
+    candidates = _candidate_uris(brand, host, explicit_port)
+    return {
+        "target": target,
+        "host": host,
+        "resolved_ip": resolved_ip,
+        "open_ports": open_ports,
+        "brand": brand,
+        "auth_required": auth_required,
+        "fingerprints": http_fingerprints,
+        "candidates": candidates,
+    }
