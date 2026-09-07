@@ -105,3 +105,8 @@
 
 - Authenticated ONVIF media profile probing and vendor-specific stream discovery.
 - Production credential adapter and live WebRTC registration/player wiring.
+# 0.4.0 - 2026-09-07
+
+- 新增 `streamlit_app.py` 主介面與 `scripts/start-streamlit.ps1`。
+- Streamlit 提供 Dashboard、單一授權 External Scan、Authorized Public Scan 操作頁。
+- 新增 Streamlit dependency；secrets 仍只允許本機/部署平台 secret store。

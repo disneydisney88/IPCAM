@@ -64,6 +64,17 @@ cd "G:\我的雲端硬碟\IPCAM"
 
 正式本機入口：<http://127.0.0.1:8080>
 
+### Streamlit 主入口
+
+`streamlit_app.py` 是可選的 Streamlit 主介面；FastAPI 仍負責掃描、憑證、SQLite 與 go2rtc。先啟動 backend，再執行：
+
+```powershell
+cd "G:\我的雲端硬碟\IPCAM"
+.\scripts\start-streamlit.ps1
+```
+
+Streamlit 入口預設為 <http://127.0.0.1:8501>，可用 `$env:IPCAM_API_BASE_URL` 指向其他受信任的本機 FastAPI 位址。
+
 Mock Mode：
 
 ```powershell

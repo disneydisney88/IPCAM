@@ -1,5 +1,14 @@
 # IPCAM Monitor — Codex Handover
 
+## 2026-09-07 v0.4.0 Streamlit 主入口與 GitHub 快照
+
+- 新增根目錄 `streamlit_app.py`，作為可選的 Streamlit 主介面；FastAPI 仍是掃描、SQLite、credentials、go2rtc 的唯一資料服務層。
+- 新增 `scripts/start-streamlit.ps1`，預設在 `http://127.0.0.1:8501` 啟動 Streamlit，並以 `IPCAM_API_BASE_URL` 連接本機 FastAPI。
+- Streamlit 分成 Dashboard、External Scan、Authorized Public Scan 三個 tab；External Scan 只呼叫既有單一目標 API，不新增公網任意搜尋。
+- `backend/requirements.txt` 已加入 `streamlit>=1.40,<2`。
+- 已完成 GitHub `main` 推送：commit `764366d`（之後的 Streamlit 變更待本次提交）。
+- 本次驗證：backend `34 passed`、frontend production build 成功、`streamlit_app.py` Python syntax compile 成功。
+
 ## 2026-08-24 v0.3.1 安全與可靠性更新
 
 - 已移除預設 Admin Password；首次使用須自行設定至少 12 字元密碼。舊版帶有 `must_change` 的預設雜湊會被視為未設定，不能用來解鎖。
@@ -70,6 +79,9 @@
 - `docs/ARCHITECTURE.md`：系統分層與約束。
 - `README.md`：使用與開發說明。
 - `CHANGELOG.md`：版本變更記錄。
+- `streamlit_app.py`：Streamlit 主介面；只作 API client，不直接讀 SQLite 或 credentials。
+- `scripts/start-streamlit.ps1`：Streamlit 啟動器；可用 `-ApiBaseUrl`、`-Port` 覆寫預設值。
+- `docs/DEPLOYMENT_SECRETS.md`：GitHub、Streamlit secrets、Admin password 與 Shodan key 的安全部署規則。
 
 ## 已完成
 
@@ -101,6 +113,9 @@
 - Settings UI 已整合 allowlist 匯入、scheduler 狀態/停止控制、audit 篩選/分頁/CSV 下載。
 
 ## 尚未完成
+
+- Streamlit 尚未取代 React 的全部互動功能；目前是可運行的主介面骨架，Live video、layout editor、完整設定 CRUD 仍以 React dashboard 為準。
+- Streamlit 套件需先由 `scripts/setup.ps1` 安裝 requirements；未安裝時不能執行 `python -m streamlit`。
 
 - Shodan 目前只有 `GET /api/shodan/status`、`PUT /api/shodan/key`、`GET /api/shodan/enrich/{target_id}`；沒有 `/api/shodan/search`。
 - 沒有 Shodan dork / `product:` / `has_screenshot:` 公網搜尋。
@@ -145,9 +160,33 @@ $env:Path = 'C:\Users\klcho\.cache\codex-runtimes\codex-primary-runtime\dependen
 # Health / external target API
 Invoke-WebRequest 'http://127.0.0.1:8080/api/health'
 Invoke-WebRequest 'http://127.0.0.1:8080/api/external-targets'
+
+# Start Streamlit client after FastAPI is running
+& 'G:\我的雲端硬碟\IPCAM\scripts\start-streamlit.ps1'
+# Optional custom backend / port
+& 'G:\我的雲端硬碟\IPCAM\scripts\start-streamlit.ps1' -ApiBaseUrl 'http://127.0.0.1:8080' -Port 8501
 ```
 
 注意：`start-local.ps1` 啟動的是沒有 reload 的 uvicorn process。修改 backend 後必須重啟，否則會看到舊 route 的 `404` 或 `405`。
+
+## 給下一個 Codex 的交接清單
+
+### 已完成
+
+1. **來源與入口**：唯一工作目錄是 `G:\我的雲端硬碟\IPCAM`；Git remote 是 `https://github.com/disneydisney88/IPCAM.git`，分支 `main`。
+2. **後端**：FastAPI 由 `backend/app/main.py` 啟動，預設 `127.0.0.1:8080`；修改 backend 後要停止/重啟，不會 hot reload。
+3. **Streamlit**：使用 `streamlit_app.py` 作 client 入口；它不應直接存取 SQLite、明文 credentials 或掃描未授權目標。
+4. **密碼**：Admin password 從 Streamlit/React 的 Authorized Public Scan 設定；最少 12 字元，API 只接受短期 unlock token。
+5. **外部掃描**：只可呼叫 `POST /api/external-targets/scan` 的單一 host/已啟用 allowlist；禁止 Mass-CIDR、弱密碼猜測、exploit。
+6. **Shodan**：目前只有 allowlist enrichment，沒有 `/api/shodan/search`；key 由受保護管理 API 寫入本機 credential store。
+7. **Git secrets**：`.env*`、`.streamlit/secrets.toml`、keys/certs/credentials JSON 已加入 `.gitignore`；禁止把真實 key commit。
+
+### 下一步建議
+
+1. 在全新 Windows 環境執行 `scripts/setup.ps1`，確認 Streamlit 安裝後啟動 FastAPI，再啟動 Streamlit。
+2. 驗證 `http://127.0.0.1:8501` 三個 tab，尤其是 Admin setup/unlock、External Scan 錯誤訊息與 allowlist 限制。
+3. 若要把 React 功能逐項搬到 Streamlit，先補測試與 API client，再逐步遷移，不要讓 Streamlit 直接繞過 FastAPI security boundary。
+4. 每次修改後執行 `scripts/test-system.ps1`、frontend build、`python -m py_compile streamlit_app.py`，並更新本文件與 `CHANGELOG.md`。
 
 ## 建議下一個 Codex 的順序
 
