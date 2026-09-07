@@ -1,0 +1,6 @@
+# Dependencies for the Streamlit Cloud client (streamlit_app.py only).
+# Streamlit Cloud installs the root requirements.txt; the full backend
+# service itself is NOT designed to run on Streamlit Cloud — it stays on
+# your Windows machine (see backend/requirements.txt and docs/DEPLOYMENT_SECRETS.md).
+streamlit>=1.40,<2
+httpx>=0.28,<1
