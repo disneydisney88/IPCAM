@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { GridLayout, verticalCompactor, type Layout } from 'react-grid-layout'
-import type { Camera, GridPosition } from '../types'
+import type { Camera, CameraTelemetry, GridPosition } from '../types'
 import { useStableContainerWidth } from '../hooks/useStableContainerWidth'
 import { CameraCard } from './CameraCard'
 
@@ -10,9 +10,12 @@ interface Props {
   gatewayReady: boolean
   restoredLayout?: GridPosition[]
   layoutEditMode: boolean
+  telemetryMap?: Record<number, CameraTelemetry>
   onLayoutChange: (layout: GridPosition[]) => void
   onFavorite: (camera: Camera) => void
   onFullscreen: (camera: Camera) => void
+  onSnapshot?: (camera: Camera) => void
+  onGeoRefresh?: (camera: Camera) => void
 }
 
 function buildLayout(cameras: Camera[], gridSize: 1 | 4 | 9 | 16, restoredLayout?: GridPosition[]) {
@@ -49,9 +52,12 @@ export function CameraGrid({
   gatewayReady,
   restoredLayout,
   layoutEditMode,
+  telemetryMap,
   onLayoutChange,
   onFavorite,
   onFullscreen,
+  onSnapshot,
+  onGeoRefresh,
 }: Props) {
   const { width, containerRef, mounted } = useStableContainerWidth(1200)
   const cameraSignature = cameras.map(camera => String(camera.id)).join('|')
@@ -106,7 +112,15 @@ export function CameraGrid({
       >
         {cameras.map(camera => (
           <div key={String(camera.id)}>
-            <CameraCard camera={camera} gatewayReady={gatewayReady} onFavorite={onFavorite} onFullscreen={onFullscreen} />
+            <CameraCard
+              camera={camera}
+              gatewayReady={gatewayReady}
+              telemetry={telemetryMap?.[camera.id]}
+              onFavorite={onFavorite}
+              onFullscreen={onFullscreen}
+              onSnapshot={onSnapshot}
+              onGeoRefresh={onGeoRefresh}
+            />
           </div>
         ))}
       </GridLayout>

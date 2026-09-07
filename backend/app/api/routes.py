@@ -4,11 +4,12 @@ import asyncio
 import csv
 import io
 import json
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -29,10 +30,14 @@ from app.services.allowlist import parse_allowlist
 from app.services.admin_auth import admin_auth
 from app.services.audit import record_audit
 from app.services.credentials import credential_store
+from app.services.geoip import resolve_ip_location
 from app.services.scheduler import scheduler
 from app.services.public_scan import public_scanner
 from app.services.identity import camera_identity, normalize_mac
 from app.services.network import detect_interfaces, validate_private_cidr
+from app.services.snapshots import capture as capture_snapshot
+from app.services.snapshots import snapshot_path
+from app.services.specs import spec_enricher
 
 
 router = APIRouter(prefix="/api")
@@ -55,6 +60,8 @@ def camera_to_dict(camera: Camera) -> dict[str, Any]:
         "area_name": camera.area.name if camera.area else None, "favorite": camera.favorite is not None,
         "connection_type": camera.connection_type, "host": camera.host, "resolved_ip": camera.resolved_ip,
         "snapshot_url": camera.snapshot_url, "model_specs": camera.model_specs, "sort_order": camera.sort_order,
+        "latitude": camera.latitude, "longitude": camera.longitude,
+        "country": camera.country, "city": camera.city, "isp": camera.isp,
         "ptz_support": camera.ptz_support, "audio_support": camera.audio_support,
         "last_seen": camera.last_seen, "last_successful_stream": camera.last_successful_stream,
         "last_error": camera.last_error, "is_mock": camera.is_mock,
@@ -72,6 +79,10 @@ def external_target_to_dict(target: ExternalTarget) -> dict[str, Any]:
         "enabled": target.enabled,
         "notes": target.notes,
         "last_scan": target.last_scan,
+        "latitude": target.latitude,
+        "longitude": target.longitude,
+        "country": target.country,
+        "city": target.city,
         "created_at": target.created_at,
     }
 
@@ -271,6 +282,13 @@ def create_camera(payload: CameraInput, db: Session = Depends(get_db)) -> dict[s
     values["mac"] = normalize_mac(payload.mac)
     values["host"] = values.get("host") or values["ip"]
     values["resolved_ip"] = values.get("resolved_ip") or values["ip"]
+    if not (values.get("model_specs") or {}).get("tags"):
+        enriched = spec_enricher.enrich(payload.manufacturer, payload.model)
+        specs = values.get("model_specs") or {}
+        specs.setdefault("tags", enriched.get("tags") or [])
+        if enriched.get("resolution_mp"):
+            specs.setdefault("resolution_mp", enriched["resolution_mp"])
+        values["model_specs"] = specs
     camera = Camera(**values, identity_key=identity, status="NEW")
     db.add(camera)
     try:
@@ -367,6 +385,100 @@ async def camera_live(camera_id: int, kind: str = Query(default="sub", pattern="
     return {"available": True, "state": "ready", "message": "READY", "player_url": manager.player_url(stream_name)}
 
 
+@router.post("/cameras/{camera_id}/snapshot")
+async def capture_camera_snapshot(camera_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    camera = db.get(Camera, camera_id)
+    if not camera:
+        raise HTTPException(404, "Camera not found")
+    result = await capture_snapshot(camera)
+    if result.get("available"):
+        camera.snapshot_url = result["snapshot_url"]
+        db.commit()
+    return result
+
+
+@router.get("/cameras/{camera_id}/snapshot.jpg")
+def serve_camera_snapshot(camera_id: int) -> FileResponse:
+    path = snapshot_path(camera_id)
+    if not path.exists():
+        raise HTTPException(404, "Snapshot has not been captured yet")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-cache"})
+
+
+@router.post("/cameras/{camera_id}/geoip")
+async def refresh_camera_geoip(camera_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    camera = db.get(Camera, camera_id)
+    if not camera:
+        raise HTTPException(404, "Camera not found")
+    location = await resolve_ip_location(camera.resolved_ip or camera.ip)
+    if location is None:
+        return camera_to_dict(camera) | {"geoip": "unresolved"}
+    if not location.get("is_private"):
+        camera.latitude = location.get("latitude")
+        camera.longitude = location.get("longitude")
+        camera.country = location.get("country")
+        camera.city = location.get("city")
+        camera.isp = location.get("isp")
+        record_audit(db, "camera.geoip_updated", target_id=str(camera.id), target_name=camera.name,
+                     details={"city": camera.city, "country": camera.country})
+        db.commit()
+        db.refresh(camera)
+    return camera_to_dict(camera) | {"geoip": "local" if location.get("is_private") else "resolved"}
+
+
+@router.post("/cameras/{camera_id}/enrich-specs")
+def enrich_camera_specs(camera_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    camera = db.get(Camera, camera_id)
+    if not camera:
+        raise HTTPException(404, "Camera not found")
+    enriched = spec_enricher.enrich(camera.manufacturer, camera.model)
+    specs = dict(camera.model_specs or {})
+    specs.update({key: value for key, value in enriched.items() if key != "model"})
+    specs.setdefault("tags", enriched.get("tags") or [])
+    camera.model_specs = specs
+    db.commit()
+    db.refresh(camera)
+    return camera_to_dict(camera)
+
+
+@router.get("/telemetry")
+async def camera_telemetry(ids: str = Query(default=""), db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    id_list = []
+    for value in ids.split(","):
+        value = value.strip()
+        if value.isdigit() and int(value) not in id_list:
+            id_list.append(int(value))
+    id_list = id_list[:64]
+    if not id_list:
+        return []
+    cameras = db.scalars(select(Camera).where(Camera.id.in_(id_list))).all()
+    checked_at = datetime.now(timezone.utc).isoformat()
+
+    async def probe(camera: Camera) -> dict[str, Any]:
+        if camera.is_mock:
+            return {"id": camera.id, "online": camera.status == "LIVE", "latency_ms": None, "checked_at": checked_at}
+        host = camera.host or camera.ip
+        ports = [port for port in (camera.rtsp_port, camera.http_port, 554, 80) if port]
+        started = time.perf_counter()
+        for port in dict.fromkeys(ports):
+            if await _tcp_probe(host, port):
+                return {"id": camera.id, "online": True,
+                        "latency_ms": round((time.perf_counter() - started) * 1000, 1), "checked_at": checked_at}
+        return {"id": camera.id, "online": False, "latency_ms": None, "checked_at": checked_at}
+
+    return list(await asyncio.gather(*(probe(camera) for camera in cameras)))
+
+
+async def _tcp_probe(host: str, port: int, timeout: float = 1.0) -> bool:
+    try:
+        _reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
+        writer.close()
+        await writer.wait_closed()
+        return True
+    except (OSError, asyncio.TimeoutError):
+        return False
+
+
 @router.get("/external-targets")
 def list_external_targets(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
     statement = select(ExternalTarget).order_by(ExternalTarget.name)
@@ -453,8 +565,16 @@ async def scan_external_target_endpoint(payload: ExternalScanInput, db: Session 
         scheduler.release_target(target_key)
     if target:
         target.last_scan = datetime.now(timezone.utc)
+    location = await resolve_ip_location(result.get("resolved_ip") or host) if result.get("resolved_ip") else None
+    result["location"] = location
+    if target and location and not location.get("is_private"):
+        target.latitude = location.get("latitude")
+        target.longitude = location.get("longitude")
+        target.country = location.get("country")
+        target.city = location.get("city")
     record_audit(db, "external_scan.manual", target_id=target.id if target else None,
-                 target_name=target_name, details={"host": host, "mode": payload.mode})
+                 target_name=target_name, details={"host": host, "mode": payload.mode,
+                                                   "geo": None if not location else location.get("city")})
     db.commit()
     return {"name": target_name, **result}
 
@@ -776,6 +896,11 @@ def ensure_mock_data(db: Session = Depends(get_db)) -> dict[str, int]:
         ("CAM 11", "Dahua", "IPC-HDW2231T", "192.168.1.111", "External", "OFFLINE", "H264", 1920, 1080),
         ("CAM 12", "Generic ONVIF", "Mini Dome", "192.168.1.112", "Entrance", "NEW", "H264", 1280, 720),
     ]
+    geo_fixtures = {
+        9: (35.6762, 139.6503, "Japan", "Tokyo", "Mock Fiber Tokyo"),
+        10: (25.0330, 121.5654, "Taiwan", "Taipei", "Mock Telecom TW"),
+        11: (22.3193, 114.1694, "Hong Kong", "Kowloon", "Mock Net HK"),
+    }
     created = 0
     for index, (name, vendor, model, ip, area, status, codec, width, height) in enumerate(fixtures, 1):
         identity = f"mock:{index:02d}"
@@ -794,5 +919,13 @@ def ensure_mock_data(db: Session = Depends(get_db)) -> dict[str, int]:
                 CameraStream(kind="sub", codec="H264", width=640, height=360, fps=15, validated=status == "LIVE"),
             ])
             created += 1
+        enriched = spec_enricher.enrich(vendor, model)
+        specs = dict(camera.model_specs or {})
+        specs.setdefault("tags", enriched.get("tags") or [])
+        camera.model_specs = specs
+        if index in geo_fixtures:
+            latitude, longitude, country, city, isp = geo_fixtures[index]
+            camera.latitude, camera.longitude = latitude, longitude
+            camera.country, camera.city, camera.isp = country, city, isp
     db.commit()
     return {"created": created, "total": db.scalar(select(Camera).where(Camera.is_mock.is_(True)).count()) if False else 12}

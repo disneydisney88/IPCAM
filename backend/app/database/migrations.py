@@ -3,7 +3,7 @@ from __future__ import annotations
 from app.database.core import Base, engine
 
 
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 
 def _table_columns(connection, table_name: str) -> set[str]:
@@ -20,6 +20,7 @@ def migrate_database() -> int:
     """Apply idempotent local SQLite migrations and return the schema version.
 
     Version 4 adds scheduler run history without changing or deleting existing data.
+    Version 5 adds GeoIP location columns to cameras and external targets.
     """
     Base.metadata.create_all(bind=engine)
     with engine.begin() as connection:
@@ -77,6 +78,15 @@ def migrate_database() -> int:
         _add_column(connection, "cameras", "snapshot_url TEXT", "snapshot_url")
         _add_column(connection, "cameras", "model_specs TEXT", "model_specs")
         _add_column(connection, "cameras", "sort_order INTEGER DEFAULT 0", "sort_order")
+        _add_column(connection, "cameras", "latitude REAL", "latitude")
+        _add_column(connection, "cameras", "longitude REAL", "longitude")
+        _add_column(connection, "cameras", "country TEXT", "country")
+        _add_column(connection, "cameras", "city TEXT", "city")
+        _add_column(connection, "cameras", "isp TEXT", "isp")
+        _add_column(connection, "external_targets", "latitude REAL", "latitude")
+        _add_column(connection, "external_targets", "longitude REAL", "longitude")
+        _add_column(connection, "external_targets", "country TEXT", "country")
+        _add_column(connection, "external_targets", "city TEXT", "city")
         current = int(connection.exec_driver_sql("PRAGMA user_version").scalar_one())
         if current < CURRENT_SCHEMA_VERSION:
             connection.exec_driver_sql(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")

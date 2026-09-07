@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
-import { Camera, ChevronRight, Grid2X2, Layers3, Settings, Star, Video } from 'lucide-react'
+import { Camera, ChevronRight, Grid2X2, Layers3, Map as MapIcon, Settings, Star, Video } from 'lucide-react'
 import type { Area, SavedView } from '../types'
 
-export type Section = { type: 'all' | 'favorites' | 'area' | 'view' | 'settings' | 'internet'; id?: number }
+export type Section = { type: 'all' | 'favorites' | 'area' | 'view' | 'settings' | 'internet' | 'map'; id?: number }
 
 interface Props {
   areas: Area[]
@@ -28,6 +28,7 @@ export function Sidebar({ areas, views, active, onSelect, internetCount }: Props
         {nav({ type: 'all' }, <Camera size={17} />, 'All Cameras')}
         {nav({ type: 'favorites' }, <Star size={17} />, 'My Favorites')}
         {nav({ type: 'internet' }, <Layers3 size={17} />, 'Internet Cameras', internetCount)}
+        {nav({ type: 'map' }, <MapIcon size={17} />, 'Map View')}
         <span className="nav-label section-label">AREAS</span>
         {areas.map(area => nav({ type: 'area', id: area.id }, <span className="area-dot" />, area.name, area.camera_count))}
         <span className="nav-label section-label">MY VIEWS</span>

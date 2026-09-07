@@ -66,3 +66,40 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .external-result { margin: 14px 0 8px; padding: 12px; border-radius: 12px; border: 1px solid #27425e; background: #0a1320; display: grid; gap: 4px; }
 .external-result strong { color: #eff6ff; font-size: 13px; }
 .external-result span, .external-result small { color: #73859b; font-size: 11px; }
+.badge-geo { color: #9ec8ff; border-color: #2f4f7e; background: #101f36d8; }
+.camera-info-overlay { position: absolute; inset: 0; z-index: 5; background: #060c14ee; backdrop-filter: blur(6px); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; overflow: auto; }
+.camera-info-overlay header { display: flex; align-items: center; justify-content: space-between; }
+.camera-info-overlay strong { font-size: 12px; color: #e8f0f9; }
+.camera-info-overlay header button { border: 0; background: #14243a; color: #9db0c5; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; cursor: pointer; }
+.camera-info-overlay dl { margin: 0; display: grid; gap: 7px; }
+.camera-info-overlay dl div { display: grid; grid-template-columns: 62px 1fr; gap: 8px; align-items: baseline; }
+.camera-info-overlay dt { font: 600 8px 'JetBrains Mono'; letter-spacing: .8px; color: #5d7089; text-transform: uppercase; }
+.camera-info-overlay dd { margin: 0; font-size: 10px; color: #b9c8d8; word-break: break-all; }
+.camera-info-overlay .secondary { height: 32px; font-size: 11px; align-self: flex-start; }
+.camera-actions button.info-active { color: #58a3ff; background: #14273f; }
+.map-shell { margin: 8px 32px 30px; display: grid; grid-template-columns: minmax(0, 1fr) 264px; gap: 14px; align-items: stretch; }
+.map-canvas { position: relative; height: calc(100vh - 250px); min-height: 420px; border: 1px solid #203047; border-radius: 14px; overflow: hidden; background: #0b1420; }
+.map-canvas .leaflet-container { width: 100%; height: 100%; background: #0b1420; }
+.map-canvas .leaflet-tile { filter: grayscale(.35) brightness(.82) contrast(1.05); }
+.map-canvas .leaflet-control-attribution { background: #0b1420cc; color: #64768b; font-size: 9px; }
+.map-canvas .leaflet-control-attribution a { color: #7d9dc4; }
+.map-canvas .leaflet-bar a { background: #101a29; color: #b9c8d9; border-color: #22334a; }
+.map-empty { position: absolute; inset: 0; z-index: 500; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #42566e; background: #0b1420d8; pointer-events: none; }
+.map-empty strong { color: #c3d2e2; font-size: 14px; }
+.map-empty span { font-size: 11px; color: #66798f; }
+.map-side { border: 1px solid #203047; border-radius: 14px; background: #0e1826; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.map-side h3 { margin: 0; font-size: 13px; color: #dfe9f5; display: flex; align-items: center; gap: 8px; }
+.map-side h3 em { font: 600 10px 'JetBrains Mono'; color: #7ea4d4; background: #14273f; border-radius: 999px; padding: 2px 8px; font-style: normal; }
+.map-side > p { margin: 0; color: #66798f; font-size: 10px; line-height: 1.5; }
+.map-side-list { overflow: auto; display: grid; gap: 8px; align-content: start; }
+.map-side-list > div { display: flex; gap: 9px; align-items: center; border: 1px solid #1d2d42; border-radius: 10px; padding: 9px 10px; background: #0b141f; color: #51708f; }
+.map-side-list strong { display: block; font-size: 11px; color: #d7e2ee; }
+.map-side-list span { display: block; font: 500 9px 'JetBrains Mono'; color: #64768b; margin-top: 2px; }
+.map-side-empty { color: #42566e; font-size: 11px; }
+.map-popup { display: grid; gap: 5px; min-width: 190px; font-family: 'DM Sans', sans-serif; }
+.map-popup strong { font-size: 13px; color: #16222f; }
+.map-popup > span { font-size: 11px; color: #4a5a6a; }
+.map-popup img { width: 100%; border-radius: 8px; border: 1px solid #d7dee6; object-fit: cover; max-height: 110px; }
+.map-popup small { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #5a6a7a; }
+.map-popup button { margin-top: 4px; border: 0; background: #287cf4; color: white; border-radius: 7px; height: 28px; padding: 0 10px; display: flex; align-items: center; justify-content: center; gap: 6px; font: 600 10px 'DM Sans'; cursor: pointer; }
+@media(max-width:900px){.map-shell{grid-template-columns:1fr;margin-inline:18px}.map-canvas{height:52vh}}

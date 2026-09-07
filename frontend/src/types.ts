@@ -26,12 +26,24 @@ export interface Camera {
   resolved_ip: string | null
   snapshot_url: string | null
   model_specs: Record<string, unknown> | null
+  latitude: number | null
+  longitude: number | null
+  country: string | null
+  city: string | null
+  isp: string | null
   sort_order: number
   ptz_support: boolean
   audio_support: boolean
   is_mock: boolean
   groups: string[]
   streams: StreamInfo[]
+}
+
+export interface CameraTelemetry {
+  id: number
+  online: boolean
+  latency_ms: number | null
+  checked_at: string
 }
 
 export interface Area { id: number; name: string; camera_count: number }
@@ -56,7 +68,20 @@ export interface ExternalTarget {
   enabled: boolean
   notes: string | null
   last_scan: string | null
+  latitude: number | null
+  longitude: number | null
+  country: string | null
+  city: string | null
   created_at: string
+}
+
+export interface GeoLocation {
+  is_private: boolean
+  country: string | null
+  city: string | null
+  latitude: number | null
+  longitude: number | null
+  isp: string | null
 }
 
 export interface ExternalScanResult {
@@ -72,6 +97,7 @@ export interface ExternalScanResult {
     rtsp: string[]
     snapshot: string[]
   }
+  location?: GeoLocation | null
 }
 
 export interface AllowlistImportResult { created: number; updated: number; rejected: number; errors: Array<{ row: number; error: string }> }

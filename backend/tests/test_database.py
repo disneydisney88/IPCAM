@@ -12,10 +12,10 @@ def test_schema_contains_milestone_tables():
 
 
 def test_baseline_migration_is_versioned_and_idempotent():
-    assert migrate_database() == 4
-    assert migrate_database() == 4
+    assert migrate_database() == 5
+    assert migrate_database() == 5
     with engine.connect() as connection:
-        assert connection.exec_driver_sql("PRAGMA user_version").scalar_one() == 4
+        assert connection.exec_driver_sql("PRAGMA user_version").scalar_one() == 5
 
 
 def test_area_favorite_and_saved_view_persist(client):

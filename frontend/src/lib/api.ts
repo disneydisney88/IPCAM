@@ -1,4 +1,4 @@
-import type { AllowlistImportResult, Area, AuditFilters, AuditPage, Camera, ExternalScanResult, ExternalTarget, LiveStream, NetworkInterface, SavedView, SchedulerRun, SchedulerStatus } from '../types'
+import type { AllowlistImportResult, Area, AuditFilters, AuditPage, Camera, CameraTelemetry, ExternalScanResult, ExternalTarget, LiveStream, NetworkInterface, SavedView, SchedulerRun, SchedulerStatus } from '../types'
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -39,6 +39,10 @@ export const api = {
   schedulerRuns: () => request<SchedulerRun[]>('/api/scheduler/runs?limit=10'),
   auditActions: () => request<string[]>('/api/audit-logs/actions'),
   cameraLive: (id: number, kind: 'main' | 'sub' = 'sub') => request<LiveStream>(`/api/cameras/${id}/live?kind=${kind}`),
+  telemetry: (ids: number[]) => request<CameraTelemetry[]>(`/api/telemetry?ids=${ids.join(',')}`),
+  captureSnapshot: (id: number) => request<{ available: boolean; snapshot_url?: string; message?: string }>(`/api/cameras/${id}/snapshot`, { method: 'POST' }),
+  refreshGeoip: (id: number) => request<Camera>(`/api/cameras/${id}/geoip`, { method: 'POST' }),
+  enrichSpecs: (id: number) => request<Camera>(`/api/cameras/${id}/enrich-specs`, { method: 'POST' }),
   setCameraCredentials: (id: number, payload: { username: string; password: string; rtsp_path: string; stream_kind: 'main' | 'sub' }) => request<{ configured: boolean }>(`/api/cameras/${id}/credentials`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteCameraCredentials: (id: number, kind: 'main' | 'sub' = 'sub') => request<void>(`/api/cameras/${id}/credentials?kind=${kind}`, { method: 'DELETE' }),
   dashboardSummary: () => request<any>('/api/dashboard/summary'),

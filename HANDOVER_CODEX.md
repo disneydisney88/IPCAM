@@ -1,5 +1,23 @@
 # IPCAM Monitor — Codex Handover
 
+## 2026-09-07 v0.5.0 GeoIP 地圖、Snapshot、Telemetry 與 Spec Enrichment
+
+本版一次補齊 Gemini plan 的 5 個未落功能 + 新增 IP 地理定位（GeoIP）與地圖視圖：
+
+- **GeoIP 服務**：新增 `backend/app/services/geoip.py`。私有/loopback/link-local/multicast/reserved 一律回 `LAN Subnet`，絕不對外查詢；公網 IP 走 `ip-api.com` 免費端點（HTTP、45 req/min），內建 24h TTL cache、負向 cache、40 calls/min 保守限速。`ip-api.com` 免費版是明文 HTTP，若需加密可日後換 GeoLite2 mmdb（`_fetch` 已抽成可替換）。
+- **DB migration v5**：`cameras` 加 `latitude/longitude/country/city/isp`；`external_targets` 加 `latitude/longitude/country/city`。`CURRENT_SCHEMA_VERSION` 5。
+- **External scan 整合**：`POST /api/external-targets/scan` 回應多 `location`；有 `target_id` 時 geo 會持久化到 target row，並記錄 audit（`external_scan.manual` details.geo）。
+- **Snapshot 服務**：新增 `backend/app/services/snapshots.py`（digest→basic auth fallback、品牌 snapshot endpoints 優先、generic fallback）。新 API：`POST /api/cameras/{id}/snapshot`（抓圖並寫 `snapshot_url`）、`GET /api/cameras/{id}/snapshot.jpg`（檔案服務）。快取在 `%LOCALAPPDATA%\IPCAM\snapshots`。從此 CameraCard 的 snapshot 圖層真的會有圖。
+- **Telemetry**：`GET /api/telemetry?ids=1,2,3`（上限 64）對每台相機做 TCP 554/80 健康探測（mock 相機直接回 status）。前端 App 每 30 秒輪詢，CameraCard 狀態燈/FPS 即時更新、不影響卡片幾何。
+- **Spec enricher 接線**：`POST /api/cameras` 自動 enrich tags；`POST /api/cameras/{id}/enrich-specs` 手動補；mock fixtures 也會補 tags + 三台 External 區相機帶示範座標（Tokyo/Taipei/Kowloon）。
+- **地圖視圖**：`frontend/src/components/CameraMapView.tsx`（react-leaflet 5 + OSM tiles，CircleMarker、popup 含快照/座標/ISP/Open Live）；Sidebar 新增 `Map View`；相機卡加 📍 city,country 徽章； LAN 無座標相機列在地圖側欄並說明不會送出查詢。
+- **CameraCard 按鈕**：Snapshot 按鈕會真的抓圖（spinner + toast），Info 按鈕開啟詳情浮層（host/device/streams/location/ISP/telemetry + Update GeoIP 按鈕）。
+- **Streamlit**：Dashboard 顯示 📍 地點 + `st.map`；External Scan 顯示 location 結果（私有網段會註明不對外查詢）。
+- **決策記錄**：卡片 inline `<video>`（plan 的 `/api/v1/streams/{id}/live.mp4`）不做——該 endpoint 不存在且 16 路 iframe 不可行；採「卡片=快照、Live=fullscreen go2rtc iframe」的既有架構。
+- **新依賴**：frontend `leaflet@^1.9.4`、`react-leaflet@^5.0.0`（React 19 相容）、`@types/leaflet`。
+- **驗證**：backend `45 passed`（原 34 + geo/snapshot/telemetry/mock 11 條新測試）、frontend production build 成功、`streamlit_app.py` compile OK、實測 `8.8.8.8` scan 回 location（Ashburn, US · Google LLC）並持久化到 target、mock ensure 後 3 台帶座標 / 12 台帶 tags、telemetry 回應正常。
+- 注意：`resolve_ip_location` 對 TEST-NET（203.0.113.x 等）會視為保留網段回 LAN Subnet、不對外查詢（Python 3.13 `ipaddress.is_private` 行為，與 external.py 的 DOC_TEST_NETWORKS 放行是兩回事）。
+
 ## 2026-09-07 v0.4.0 Streamlit 主入口與 GitHub 快照
 
 - 新增根目錄 `streamlit_app.py`，作為可選的 Streamlit 主介面；FastAPI 仍是掃描、SQLite、credentials、go2rtc 的唯一資料服務層。

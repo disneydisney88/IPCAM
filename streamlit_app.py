@@ -52,8 +52,24 @@ def render_overview() -> None:
         with st.container(border=True):
             left, right = st.columns([3, 1])
             left.markdown(f"**{camera.get('name', 'Camera')}**  ·  `{camera.get('host') or camera.get('ip')}`")
-            left.caption(f"{camera.get('manufacturer', 'Unknown')} / {camera.get('model', 'Unknown')} · {camera.get('status', 'UNKNOWN')}")
+            location = " · ".join(
+                str(value) for value in (camera.get("city"), camera.get("country")) if value
+            )
+            caption = f"{camera.get('manufacturer', 'Unknown')} / {camera.get('model', 'Unknown')} · {camera.get('status', 'UNKNOWN')}"
+            if location:
+                caption += f" · 📍 {location}"
+            left.caption(caption)
             right.write(camera.get("connection_type", "lan").upper())
+    geo_points = [
+        {"name": item.get("name", "Camera"), "lat": item["latitude"], "lon": item["longitude"]}
+        for item in visible
+        if item.get("latitude") is not None and item.get("longitude") is not None
+    ]
+    if geo_points:
+        st.subheader("Camera Map")
+        st.map(geo_points, latitude="lat", longitude="lon", size=500_000)
+    else:
+        st.caption("目前沒有帶地理座標的攝影機；對公網目標執行外部掃描後即會出現。")
 
 
 def render_external_scan() -> None:
@@ -74,6 +90,17 @@ def render_external_scan() -> None:
         result = api_call("POST", "/api/external-targets/scan", json=payload)
         if result:
             st.success("掃描完成")
+            location = result.get("location")
+            if location:
+                if location.get("is_private"):
+                    st.info("📍 私有或保留網段：不會對外查詢地理位置。")
+                else:
+                    coords = ""
+                    if location.get("latitude") is not None and location.get("longitude") is not None:
+                        coords = f" · {location['latitude']:.4f}, {location['longitude']:.4f}"
+                    st.info(f"📍 {location.get('city') or 'Unknown'}, {location.get('country') or 'Unknown'}{coords} · ISP: {location.get('isp') or 'unknown'}")
+            elif result.get("resolved_ip"):
+                st.caption("GeoIP 查詢失敗或已達上限，稍後可再試。")
             st.json(result)
 
 

@@ -24,6 +24,11 @@ class CameraInput(BaseModel):
     resolved_ip: str | None = None
     snapshot_url: str | None = None
     model_specs: dict[str, Any] | None = None
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    country: str | None = Field(default=None, max_length=120)
+    city: str | None = Field(default=None, max_length=120)
+    isp: str | None = Field(default=None, max_length=200)
     sort_order: int = 0
 
 
@@ -36,6 +41,11 @@ class CameraUpdate(BaseModel):
     resolved_ip: str | None = None
     snapshot_url: str | None = None
     model_specs: dict[str, Any] | None = None
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    country: str | None = Field(default=None, max_length=120)
+    city: str | None = Field(default=None, max_length=120)
+    isp: str | None = Field(default=None, max_length=200)
     sort_order: int | None = None
 
 

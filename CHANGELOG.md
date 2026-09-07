@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0 - 2026-09-07
+
+### Added
+
+- Added GeoIP location resolution (`backend/app/services/geoip.py`) with strict RFC1918/loopback/link-local filtering that never queries external services for private addresses, a 24h cache, negative caching, and a conservative rate limit for the free ip-api.com endpoint.
+- Added Map View to the dashboard (`react-leaflet` + OpenStreetMap) with live-status markers, snapshot/ISP popups, a local-network side list, and a new Sidebar navigation entry.
+- Added location badges on camera cards, an Info overlay with host/device/stream/location/telemetry details, and a working Snapshot capture button.
+- Added snapshot capture and caching (`backend/app/services/snapshots.py`) with digest-then-basic auth, brand-specific endpoints, `POST /api/cameras/{id}/snapshot`, and `GET /api/cameras/{id}/snapshot.jpg` file serving.
+- Added `GET /api/telemetry` TCP health probing (up to 64 cameras) with 30-second frontend polling that updates status pills and FPS without changing card geometry.
+- Added schema migration v5 with latitude/longitude/country/city/isp on cameras and latitude/longitude/country/city on external targets; external scans now resolve and persist target locations and include them in scan responses and audit events.
+- Wired the camera spec enricher into camera creation, mock fixtures, and a new `POST /api/cameras/{id}/enrich-specs` endpoint so spec tags actually render on cards.
+- Streamlit dashboard now shows camera locations, an `st.map` map, and GeoIP results after external scans.
+
 ## 0.3.1 - 2026-08-24
 
 ### Added

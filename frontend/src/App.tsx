@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Bell, ChevronDown, Grid2X2, Menu, MonitorPlay, Plus, Radar, Save, Search, X } from 'lucide-react'
 import { api } from './lib/api'
-import type { Area, Camera, GridPosition, LiveStream, NetworkInterface, SavedView } from './types'
+import type { Area, Camera, CameraTelemetry, GridPosition, LiveStream, NetworkInterface, SavedView } from './types'
 import { Sidebar, type Section } from './components/Sidebar'
 import { CameraGrid } from './components/CameraGrid'
+import { CameraMapView } from './components/CameraMapView'
 import { ScanPanel } from './components/ScanPanel'
 import { SettingsPanel } from './components/SettingsPanel'
 import { AddCameraWizard } from './components/AddCameraWizard'
@@ -32,6 +33,7 @@ export default function App() {
   const [toast, setToast] = useState('')
   const [loading, setLoading] = useState(true)
   const [summary, setSummary] = useState<any>(null)
+  const [telemetryMap, setTelemetryMap] = useState<Record<number, CameraTelemetry>>({})
 
   const refresh = useCallback(async () => {
     const [cameraData, areaData, viewData] = await Promise.all([api.cameras(), api.areas(), api.views()])
@@ -39,6 +41,28 @@ export default function App() {
     setAreas(areaData)
     setViews(viewData)
   }, [])
+
+  const cameraIds = useMemo(() => cameras.map(camera => camera.id).join(','), [cameras])
+
+  useEffect(() => {
+    if (!cameraIds) return
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const reports = await api.telemetry(cameraIds.split(',').map(Number))
+        if (cancelled) return
+        setTelemetryMap(Object.fromEntries(reports.map(report => [report.id, report])))
+      } catch {
+        /* telemetry is best-effort; keep the previous snapshot */
+      }
+    }
+    poll()
+    const timer = window.setInterval(poll, 30_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [cameraIds])
 
   useEffect(() => {
     const boot = async () => {
@@ -120,6 +144,30 @@ export default function App() {
     }
   }
 
+  const captureSnapshot = async (camera: Camera) => {
+    try {
+      const result = await api.captureSnapshot(camera.id)
+      if (result.available) {
+        await refresh()
+        setToast('Snapshot captured')
+      } else {
+        setToast(result.message || 'Camera did not return a snapshot')
+      }
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Snapshot failed')
+    }
+  }
+
+  const refreshGeoip = async (camera: Camera) => {
+    try {
+      const updated = await api.refreshGeoip(camera.id)
+      setCameras(current => current.map(item => item.id === camera.id ? updated : item))
+      setToast(updated.latitude != null ? `Location: ${updated.city || ''}, ${updated.country || ''}` : 'No public coordinates for this camera')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'GeoIP refresh failed')
+    }
+  }
+
   const saveView = async () => {
     const name = prompt('Name this saved view', `New View ${views.length + 1}`)
     if (!name?.trim()) return
@@ -148,7 +196,9 @@ export default function App() {
       ? areas.find(area => area.id === section.id)?.name || 'Area'
       : section.type === 'internet'
         ? 'Internet Cameras'
-        : selectedView?.name || 'All Cameras'
+        : section.type === 'map'
+          ? 'Camera Map'
+          : selectedView?.name || 'All Cameras'
 
   const internetCount = cameras.filter(camera => camera.connection_type === 'internet').length
 
@@ -199,36 +249,45 @@ export default function App() {
                 <button className="secondary" onClick={saveView}><Save size={16} />Save View</button>
               </div>
             </section>
-            <section className="view-toolbar">
-              <div className="grid-picker">
-                <span>VIEW</span>
-                {gridSizes.map(size => (
-                  <button key={size} className={gridSize === size ? 'active' : ''} onClick={() => { setGridSize(size); setRestoredLayout(undefined) }}>
-                    {size}
-                  </button>
-                ))}
-              </div>
-              <div className={`gateway-state ${gateway.running ? 'ready' : ''}`}><i />{gateway.message}</div>
-            </section>
-            {section.type === 'all' && summary && <section className="dashboard-summary"><div><strong>{summary.total_cameras}</strong><span>Total Cameras</span></div><div><strong>{summary.online}</strong><span>Online</span></div><div><strong>{summary.offline}</strong><span>Offline</span></div><div><strong>{summary.last_scan ? new Date(summary.last_scan).toLocaleString() : 'Never'}</strong><span>Last Scan</span></div><div><strong>{summary.scheduler.state}</strong><span>Scheduler</span></div><div><strong>{summary.recent_discoveries.length}</strong><span>Recent Discoveries</span></div><div><strong>{summary.recent_offline.length}</strong><span>Recent Offline</span></div><div><strong>{summary.recent_scan_jobs.length}</strong><span>Recent Scan Jobs</span></div><div><strong>{summary.public_scan.state}</strong><span>Public Scan</span></div><div><strong>{summary.go2rtc.message}</strong><span>go2rtc</span></div></section>}
-            {filtered.length ? (
-              <CameraGrid
-                cameras={filtered}
-                gridSize={gridSize}
-                gatewayReady={gateway.running}
-                restoredLayout={restoredLayout}
-                layoutEditMode={layoutEditMode}
-                onLayoutChange={setLayout}
-                onFavorite={toggleFavorite}
-                onFullscreen={setFullscreen}
-              />
+            {section.type === 'map' ? (
+              <CameraMapView cameras={cameras} onFullscreen={setFullscreen} />
             ) : (
-              <div className="empty-state">
-                <Grid2X2 size={36} />
-                <h2>No cameras in this view</h2>
-                <p>{section.type === 'favorites' ? 'Select the star on any camera to keep it here.' : 'Run a private-network scan or add a camera manually.'}</p>
-                <button className="primary" onClick={() => setWizardOpen(true)}><Plus size={16} />Add Camera</button>
-              </div>
+              <>
+                <section className="view-toolbar">
+                  <div className="grid-picker">
+                    <span>VIEW</span>
+                    {gridSizes.map(size => (
+                      <button key={size} className={gridSize === size ? 'active' : ''} onClick={() => { setGridSize(size); setRestoredLayout(undefined) }}>
+                        {size}
+                      </button>
+                    ))}
+                  </div>
+                  <div className={`gateway-state ${gateway.running ? 'ready' : ''}`}><i />{gateway.message}</div>
+                </section>
+                {section.type === 'all' && summary && <section className="dashboard-summary"><div><strong>{summary.total_cameras}</strong><span>Total Cameras</span></div><div><strong>{summary.online}</strong><span>Online</span></div><div><strong>{summary.offline}</strong><span>Offline</span></div><div><strong>{summary.last_scan ? new Date(summary.last_scan).toLocaleString() : 'Never'}</strong><span>Last Scan</span></div><div><strong>{summary.scheduler.state}</strong><span>Scheduler</span></div><div><strong>{summary.recent_discoveries.length}</strong><span>Recent Discoveries</span></div><div><strong>{summary.recent_offline.length}</strong><span>Recent Offline</span></div><div><strong>{summary.recent_scan_jobs.length}</strong><span>Recent Scan Jobs</span></div><div><strong>{summary.public_scan.state}</strong><span>Public Scan</span></div><div><strong>{summary.go2rtc.message}</strong><span>go2rtc</span></div></section>}
+                {filtered.length ? (
+                  <CameraGrid
+                    cameras={filtered}
+                    gridSize={gridSize}
+                    gatewayReady={gateway.running}
+                    restoredLayout={restoredLayout}
+                    layoutEditMode={layoutEditMode}
+                    telemetryMap={telemetryMap}
+                    onLayoutChange={setLayout}
+                    onFavorite={toggleFavorite}
+                    onFullscreen={setFullscreen}
+                    onSnapshot={captureSnapshot}
+                    onGeoRefresh={refreshGeoip}
+                  />
+                ) : (
+                  <div className="empty-state">
+                    <Grid2X2 size={36} />
+                    <h2>No cameras in this view</h2>
+                    <p>{section.type === 'favorites' ? 'Select the star on any camera to keep it here.' : 'Run a private-network scan or add a camera manually.'}</p>
+                    <button className="primary" onClick={() => setWizardOpen(true)}><Plus size={16} />Add Camera</button>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}

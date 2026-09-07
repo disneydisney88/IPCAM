@@ -44,6 +44,11 @@ class Camera(Base):
     resolved_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     snapshot_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     model_specs: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    country: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    isp: Mapped[str | None] = mapped_column(String(200), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     ptz_support: Mapped[bool] = mapped_column(Boolean, default=False)
     audio_support: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -70,6 +75,10 @@ class ExternalTarget(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_scan: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    country: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
