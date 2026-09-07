@@ -1,10 +1,28 @@
 import type { AllowlistImportResult, Area, AuditFilters, AuditPage, Camera, CameraTelemetry, ExternalScanResult, ExternalTarget, LiveStream, NetworkInterface, SavedView, SchedulerRun, SchedulerStatus } from '../types'
 
+const TOKEN_KEY = 'ipcam.unlockToken'
+
+export const auth = {
+  token: () => sessionStorage.getItem(TOKEN_KEY),
+  set: (token: string) => sessionStorage.setItem(TOKEN_KEY, token),
+  clear: () => sessionStorage.removeItem(TOKEN_KEY),
+}
+
+type LockHandler = (status: 401 | 428 | 429) => void
+let lockHandler: LockHandler | null = null
+export function setLockHandler(handler: LockHandler | null) { lockHandler = handler }
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
-  })
+  const token = auth.token()
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(options?.headers as Record<string, string> | undefined) }
+  if (token) headers['X-Admin-Unlock'] = token
+  const response = await fetch(path, { ...options, headers })
+  if (response.status === 401 || response.status === 428 || response.status === 429) {
+    if (!path.startsWith('/api/admin/')) {
+      auth.clear()
+      lockHandler?.(response.status as 401 | 428 | 429)
+    }
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({ detail: response.statusText }))
     throw new Error(body.detail || 'Request failed')
@@ -47,6 +65,7 @@ export const api = {
   deleteCameraCredentials: (id: number, kind: 'main' | 'sub' = 'sub') => request<void>(`/api/cameras/${id}/credentials?kind=${kind}`, { method: 'DELETE' }),
   dashboardSummary: () => request<any>('/api/dashboard/summary'),
   publicScanStatus: () => request<any>('/api/public-scan'),
+  adminStatus: () => request<{ configured: boolean; locked: boolean; lockout_remaining_seconds: number; session_timeout_seconds: number }>('/api/admin/status'),
   adminSetup: (password: string, token = '') => request<{ configured: boolean }>('/api/admin/setup', { method: 'POST', headers: token ? { 'X-Admin-Unlock': token } : {}, body: JSON.stringify({ password }) }),
   adminUnlock: (password: string) => request<{ unlock_token: string; expires_in: number }>('/api/admin/unlock', { method: 'POST', body: JSON.stringify({ password }) }),
   configurePublicScan: (enabled: boolean, token: string) => request<any>(`/api/public-scan?enabled=${enabled}`, { method: 'PUT', headers: { 'X-Admin-Unlock': token } }),

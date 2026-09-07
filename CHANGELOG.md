@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.1 - 2026-09-07
+
+### Added
+
+- Added a full dashboard lock: every `/api` call now requires a short-lived admin unlock token, with `428` until the first admin password is created, `401` on invalid tokens, `429` after 5 failed attempts, and 15-minute session expiry. Health, admin setup/unlock, scan SSE events and snapshot JPEGs are exempt (EventSource and `<img>` cannot send headers). Disable with `IPCAM_DASHBOARD_LOCK=0` (tests default to unlocked).
+- Added a React lock screen with first-run password creation (min 12 chars), automatic relock on any 401/428/429, a topbar Lock-now button, and sessionStorage token handling in the API client.
+- Added the matching unlock gate and Lock-now button to the Streamlit UI; all Streamlit API calls now carry the unlock token.
+- External Scan result cards now show resolved GeoIP location, map markers recolor from live telemetry, LAN scans auto-capture snapshots for up to 12 unauthenticated cameras after completion, and Streamlit camera cards show cached snapshots.
+
+### Fixed
+
+- Fixed `/api/system/network/interfaces` failing (`route print` stdout None / wrong `route` binary resolution on some PATHs) which previously blanked the whole dashboard; interface detection now uses the absolute System32 route.exe with fallbacks, and frontend boot no longer loses camera data when interface detection fails.
+
+### Security
+
+- The dashboard is now locked by default: first run forces admin password creation, and nothing loads until unlocked.
+
 ## 0.5.0 - 2026-09-07
 
 ### Added

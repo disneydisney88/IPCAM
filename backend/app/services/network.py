@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import ipaddress
+import os
 import socket
 import subprocess
 from dataclasses import dataclass, asdict
+from pathlib import Path
 from typing import Any
 
 import psutil
@@ -27,17 +29,24 @@ def validate_private_cidr(cidr: str, max_hosts: int = 4096) -> ipaddress.IPv4Net
 
 
 def _default_gateway() -> str | None:
-    try:
-        result = subprocess.run(
-            ["route", "print", "0.0.0.0"], capture_output=True, text=True, timeout=3,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-        for line in result.stdout.splitlines():
-            fields = line.split()
-            if len(fields) >= 4 and fields[0] == "0.0.0.0" and fields[1] == "0.0.0.0":
-                return fields[2]
-    except (OSError, subprocess.SubprocessError):
-        return None
+    # Resolve route.exe explicitly: bare "route" can resolve to a non-Windows
+    # binary on some PATHs (Git Bash, MSYS) and return empty output.
+    system_root = Path(os.environ.get("SystemRoot") or r"C:\Windows")
+    candidates = [str(system_root / "System32" / "route.exe"), "route"]
+    for candidate in candidates:
+        try:
+            result = subprocess.run(
+                [candidate, "print", "0.0.0.0"], capture_output=True, text=True, timeout=3,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            if not result or not result.stdout:
+                continue
+            for line in result.stdout.splitlines():
+                fields = line.split()
+                if len(fields) >= 4 and fields[0] == "0.0.0.0" and fields[1] == "0.0.0.0":
+                    return fields[2]
+        except (OSError, subprocess.SubprocessError):
+            continue
     return None
 
 

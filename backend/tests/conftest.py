@@ -8,6 +8,8 @@ TEST_TEMP_ROOT = Path(__file__).resolve().parents[2] / ".test-tmp"
 TEST_TEMP_ROOT.mkdir(exist_ok=True)
 TEST_DATA = Path(tempfile.mkdtemp(prefix="ipcam-tests-", dir=TEST_TEMP_ROOT))
 os.environ["IPCAM_DATA_DIR"] = str(TEST_DATA)
+# Lock tests explicitly opt in via monkeypatch.setenv; keep the suite unlocked.
+os.environ["IPCAM_DASHBOARD_LOCK"] = "0"
 
 import pytest
 from fastapi.testclient import TestClient

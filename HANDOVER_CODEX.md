@@ -1,5 +1,16 @@
 # IPCAM Monitor — Codex Handover
 
+## 2026-09-07 v0.5.1 Dashboard 密碼鎖 + 網卡偵測修復
+
+- **整個 Dashboard 預設上鎖**：`backend/app/main.py` 新增 `dashboard_lock_middleware`，所有 `/api/*` 呼叫（除 `/api/health`、`/api/admin/*`、SSE `/api/scans/{id}/events`、`/api/cameras/{id}/snapshot.jpg` 四個豁免——後兩者因 EventSource/`<img>` 無法帶 header）都需要 `X-Admin-Unlock` token。未設密碼回 `428 setup required`；token 無效回 `401`；連續 5 次失敗鎖 5 分鐘回 `429`。session 15 分鐘自動過期。可用環境變數 `IPCAM_DASHBOARD_LOCK=0` 關閉（tests/conftest 已關）。
+- **React LockScreen**：首次使用強制建立 ≥12 字 Admin 密碼（setup 模式）；之後每次開啟都是鎖定畫面。`frontend/src/lib/api.ts` 統一帶 token（sessionStorage）、401/428/429 自動跳回鎖屏。Topbar 新增 🔒 Lock now 按鈕立即上鎖。
+- **Streamlit 同步上鎖**：所有 API 呼叫帶 token；未解鎖時顯示解鎖 gate（含首次設定密碼），另有 Lock now 按鈕。
+- **修復 `network.py` route print 崩潰**：`result.stdout` 可能為 None、且部分 PATH 下 `route` 會解析到非 Windows 二進位；改為優先使用 `%SystemRoot%\System32\route.exe` + None guard + 候選依序嘗試。此前會導致 `/api/system/network/interfaces` 500、前端開頁 Promise 全失敗（相機列表空白）。
+- **前端 boot 韌性**：`interfaces()` 失敗不再拖垮相機載入（獨立 try/catch）。
+- **v0.5.0 補強**：External Scan 結果卡顯示 📍 GeoIP location；地圖 marker 依即時 telemetry 上色；LAN 掃描完成後自動為最多 12 台有 http_port 且無快照的相機抓 snapshot（best-effort、audit `scan.snapshots_captured`）；Streamlit 相機卡顯示快照縮圖。
+- **維運教訓**：重複執行 `start-local.ps1` 會產生多個 uvicorn/go2rtc 競爭同一 port（Windows 允許雙 bind），症狀是 API 回應在不同 process 間跳動、資料看起來「時有時無」。重啟請先 `stop-local.ps1` 並確認 `Get-CimInstance Win32_Process | ? CommandLine -like '*uvicorn*'` 只剩一組（venv launcher + child 兩個 python.exe 屬同一實例）。另注意 Windows venv 的 python.exe 會 spawn 子進程，process 數=2x 是正常的。
+- **驗證**：50 backend tests passed（新增 4 條 lock 測試 + 1 條 interfaces 測試）、frontend build、瀏覽器 E2E（setup 屏 → 建密碼解鎖 → 相機載入 → Map View 3 pins → Lock now → 回鎖屏）。驗證後已把 `settings.admin_auth` 重置，交給使用者首次設定自己的密碼。
+
 ## 2026-09-07 v0.5.0 GeoIP 地圖、Snapshot、Telemetry 與 Spec Enrichment
 
 本版一次補齊 Gemini plan 的 5 個未落功能 + 新增 IP 地理定位（GeoIP）與地圖視圖：

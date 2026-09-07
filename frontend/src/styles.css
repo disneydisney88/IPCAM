@@ -103,3 +103,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .map-popup small { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #5a6a7a; }
 .map-popup button { margin-top: 4px; border: 0; background: #287cf4; color: white; border-radius: 7px; height: 28px; padding: 0 10px; display: flex; align-items: center; justify-content: center; gap: 6px; font: 600 10px 'DM Sans'; cursor: pointer; }
 @media(max-width:900px){.map-shell{grid-template-columns:1fr;margin-inline:18px}.map-canvas{height:52vh}}
+.lock-screen { min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at 70% -20%, #152945 0, transparent 38%), var(--bg); }
+.lock-card { width: min(360px, 92vw); background: linear-gradient(160deg, #131f30, #0b131f); border: 1px solid #2b3f59; border-radius: 18px; box-shadow: 0 30px 90px #000b; padding: 30px 26px; display: grid; gap: 12px; justify-items: center; text-align: center; }
+.lock-icon { width: 62px; height: 62px; border-radius: 18px; background: linear-gradient(145deg, #2675f4, #45d8ce); display: grid; place-items: center; color: white; box-shadow: 0 10px 34px #2680ff45; }
+.lock-card strong { font-size: 16px; letter-spacing: 2.2px; color: #eef4fb; }
+.lock-card span { font-size: 11px; color: #7d90a7; }
+.lock-card input { width: 100%; height: 42px; border: 1px solid #2b3d55; border-radius: 9px; background: #09111c; color: #dce7f4; padding: 0 13px; outline: 0; font-size: 13px; }
+.lock-card input:focus { border-color: #3a8cff; }
+.lock-card em { font-style: normal; color: #f196a0; font-size: 11px; }
+.lock-card .primary { width: 100%; height: 42px; }
+.lock-card small { font-size: 9px; color: #5d7089; font-family: 'JetBrains Mono'; letter-spacing: .4px; }

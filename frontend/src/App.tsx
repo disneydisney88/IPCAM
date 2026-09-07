@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Bell, ChevronDown, Grid2X2, Menu, MonitorPlay, Plus, Radar, Save, Search, X } from 'lucide-react'
-import { api } from './lib/api'
+import { Bell, ChevronDown, Grid2X2, Lock, Menu, MonitorPlay, Plus, Radar, Save, Search, X } from 'lucide-react'
+import { api, auth, setLockHandler } from './lib/api'
 import type { Area, Camera, CameraTelemetry, GridPosition, LiveStream, NetworkInterface, SavedView } from './types'
 import { Sidebar, type Section } from './components/Sidebar'
 import { CameraGrid } from './components/CameraGrid'
 import { CameraMapView } from './components/CameraMapView'
+import { LockScreen } from './components/LockScreen'
 import { ScanPanel } from './components/ScanPanel'
 import { SettingsPanel } from './components/SettingsPanel'
 import { AddCameraWizard } from './components/AddCameraWizard'
@@ -34,6 +35,9 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [summary, setSummary] = useState<any>(null)
   const [telemetryMap, setTelemetryMap] = useState<Record<number, CameraTelemetry>>({})
+  const [lockState, setLockState] = useState<'pending' | 'setup' | 'locked' | 'open'>('pending')
+  const [lockBusy, setLockBusy] = useState(false)
+  const [lockError, setLockError] = useState('')
 
   const refresh = useCallback(async () => {
     const [cameraData, areaData, viewData] = await Promise.all([api.cameras(), api.areas(), api.views()])
@@ -41,6 +45,82 @@ export default function App() {
     setAreas(areaData)
     setViews(viewData)
   }, [])
+
+  const loadData = useCallback(async () => {
+    try {
+      if (mock) await api.ensureMock()
+      const health = await api.mediaHealth()
+      setGateway(health)
+      try {
+        const networkData = await api.interfaces()
+        setInterfaces(networkData)
+        if (networkData[0]) setCidr(networkData[0].suggested_cidr)
+      } catch {
+        /* keep the default CIDR if interface detection fails */
+      }
+      await refresh()
+      setSummary(await api.dashboardSummary())
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Unable to load dashboard')
+    }
+  }, [mock, refresh])
+
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const status = await api.adminStatus()
+        if (!status.configured) {
+          setLockState('setup')
+        } else if (auth.token()) {
+          try {
+            await api.cameras()
+            setLockState('open')
+            await loadData()
+          } catch {
+            setLockState('locked')
+          }
+        } else {
+          setLockState('locked')
+        }
+      } catch {
+        setLockState('locked')
+      } finally {
+        setLoading(false)
+      }
+    }
+    check()
+  }, [loadData])
+
+  useEffect(() => {
+    setLockHandler(status => {
+      setLockBusy(false)
+      setLockState(status === 428 ? 'setup' : 'locked')
+    })
+    return () => setLockHandler(null)
+  }, [])
+
+  const unlockDashboard = async (password: string) => {
+    setLockBusy(true)
+    setLockError('')
+    try {
+      if (lockState === 'setup') await api.adminSetup(password)
+      const result = await api.adminUnlock(password)
+      auth.set(result.unlock_token)
+      setLockState('open')
+      await loadData()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unlock failed'
+      setLockError(message.includes('temporarily locked') ? 'Too many attempts · locked for 5 minutes' : message)
+    } finally {
+      setLockBusy(false)
+    }
+  }
+
+  const lockDashboard = () => {
+    auth.clear()
+    setTelemetryMap({})
+    setLockState('locked')
+  }
 
   const cameraIds = useMemo(() => cameras.map(camera => camera.id).join(','), [cameras])
 
@@ -63,25 +143,6 @@ export default function App() {
       window.clearInterval(timer)
     }
   }, [cameraIds])
-
-  useEffect(() => {
-    const boot = async () => {
-      try {
-        if (mock) await api.ensureMock()
-        const [networkData, health] = await Promise.all([api.interfaces(), api.mediaHealth()])
-        setInterfaces(networkData)
-        setGateway(health)
-        if (networkData[0]) setCidr(networkData[0].suggested_cidr)
-        await refresh()
-        setSummary(await api.dashboardSummary())
-      } catch (err) {
-        setToast(err instanceof Error ? err.message : 'Unable to load dashboard')
-      } finally {
-        setLoading(false)
-      }
-    }
-    boot()
-  }, [mock, refresh])
 
   useEffect(() => {
     if (!toast) return
@@ -212,6 +273,10 @@ export default function App() {
     )
   }
 
+  if (lockState !== 'open') {
+    return <LockScreen mode={lockState === 'setup' ? 'setup' : 'locked'} busy={lockBusy} error={lockError} onSubmit={unlockDashboard} />
+  }
+
   return (
     <div className="app-shell">
       <Sidebar areas={areas} views={views} active={section} onSelect={chooseSection} internetCount={internetCount} />
@@ -229,6 +294,7 @@ export default function App() {
           </label>
           <div className="topbar-spacer" />
           <div className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Camera name / IP / host" /></div>
+          <button className="icon-button" onClick={lockDashboard} title="Lock dashboard"><Lock size={18} /></button>
           <button className="icon-button"><Bell size={18} /></button>
           <div className="local-avatar">KL</div>
         </header>
@@ -250,7 +316,7 @@ export default function App() {
               </div>
             </section>
             {section.type === 'map' ? (
-              <CameraMapView cameras={cameras} onFullscreen={setFullscreen} />
+              <CameraMapView cameras={cameras} telemetryMap={telemetryMap} onFullscreen={setFullscreen} />
             ) : (
               <>
                 <section className="view-toolbar">

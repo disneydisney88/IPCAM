@@ -26,3 +26,12 @@ def test_camera_identity_prefers_stable_key_over_ip():
     assert first == second == "mac:00:11:22:33:44:55"
     assert normalize_mac("0011.2233.4455") == "00:11:22:33:44:55"
 
+
+
+def test_detect_interfaces_never_crashes():
+    from app.services.network import detect_interfaces
+
+    result = detect_interfaces()
+    assert isinstance(result, list)
+    for item in result:
+        assert item["suggested_cidr"]

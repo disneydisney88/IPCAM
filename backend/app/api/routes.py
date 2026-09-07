@@ -825,8 +825,36 @@ async def start_scan(payload: ScanInput, background_tasks: BackgroundTasks) -> d
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     scan_id = coordinator.create(payload.cidr)
-    background_tasks.add_task(coordinator.run, scan_id, payload.mock)
+    background_tasks.add_task(run_scan_with_snapshots, scan_id, payload.mock)
     return {"id": scan_id, "events_url": f"/api/scans/{scan_id}/events"}
+
+
+MAX_AUTOSNAPSHOT_CAMERAS = 12
+
+
+async def run_scan_with_snapshots(scan_id: int, mock: bool) -> None:
+    await coordinator.run(scan_id, mock)
+    if mock:
+        return
+    try:
+        captured = 0
+        with session_scope() as db:
+            cameras = db.scalars(
+                select(Camera)
+                .where(Camera.http_port.is_not(None), Camera.snapshot_url.is_(None))
+                .order_by(Camera.last_seen.desc())
+                .limit(MAX_AUTOSNAPSHOT_CAMERAS)
+            ).all()
+            if not cameras:
+                return
+            for camera in cameras:
+                result = await capture_snapshot(camera)
+                if result.get("available"):
+                    camera.snapshot_url = result["snapshot_url"]
+                    captured += 1
+            record_audit(db, "scan.snapshots_captured", details={"attempted": len(cameras), "captured": captured})
+    except Exception:  # auto-snapshot is best-effort; never fail the scan record
+        return
 
 
 @router.get("/scans/{scan_id}")

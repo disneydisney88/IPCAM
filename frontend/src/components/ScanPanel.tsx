@@ -266,6 +266,13 @@ export function ScanPanel({ cidr, mock, onClose, onComplete }: Props) {
                 <strong>{externalResult.brand || 'Unknown brand'}</strong>
                 <span>{externalResult.host}{externalResult.resolved_ip ? ` · ${externalResult.resolved_ip}` : ''}</span>
                 <small>{externalResult.open_ports.length} open ports · {externalResult.auth_required ? 'AUTH REQUIRED' : 'No auth challenge detected'}</small>
+                {externalResult.location && (
+                  <small>
+                    {externalResult.location.is_private
+                      ? '📍 Private / reserved range · GeoIP lookup skipped'
+                      : `📍 ${[externalResult.location.city, externalResult.location.country].filter(Boolean).join(', ') || 'Unknown location'}${externalResult.location.latitude != null && externalResult.location.longitude != null ? ` · ${externalResult.location.latitude.toFixed(4)}, ${externalResult.location.longitude.toFixed(4)}` : ''}${externalResult.location.isp ? ` · ${externalResult.location.isp}` : ''}`}
+                  </small>
+                )}
               </div>
             )}
             {error && <p className="error-banner">{error}</p>}

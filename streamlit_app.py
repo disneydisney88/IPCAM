@@ -18,8 +18,16 @@ API_BASE = os.getenv("IPCAM_API_BASE_URL", "http://127.0.0.1:8080").rstrip("/")
 
 def api_call(method: str, path: str, **kwargs: Any) -> Any:
     """Call the local FastAPI service and turn errors into readable UI text."""
+    headers = dict(kwargs.pop("headers", None) or {})
+    token = st.session_state.get("admin_token")
+    if token:
+        headers.setdefault("X-Admin-Unlock", str(token))
     try:
-        response = httpx.request(method, f"{API_BASE}{path}", timeout=30, **kwargs)
+        response = httpx.request(method, f"{API_BASE}{path}", timeout=30, headers=headers, **kwargs)
+        if response.status_code in (401, 428, 429) and not path.startswith("/api/admin/"):
+            st.session_state["lock_required"] = True
+            st.error("🔒 Dashboard 已鎖定：請先在下方輸入 Admin 密碼解鎖。")
+            return None
         response.raise_for_status()
         return response.json() if response.content else {}
     except httpx.HTTPStatusError as exc:
@@ -28,6 +36,28 @@ def api_call(method: str, path: str, **kwargs: Any) -> Any:
     except httpx.HTTPError as exc:
         st.error(f"無法連線到 FastAPI ({API_BASE})：{exc}")
     return None
+
+
+def render_lock_gate() -> None:
+    """Unlock box shown when the dashboard lock is engaged."""
+    status = api_call("GET", "/api/admin/status")
+    if isinstance(status, dict) and not status.get("configured"):
+        st.warning("尚未設定 Admin 密碼；請設定至少 12 字元密碼以啟用儀表板。")
+    password = st.text_input("Admin 密碼", type="password", key="lock_gate_password")
+    if st.button("🔓 解鎖 Dashboard", disabled=not password):
+        try:
+            if isinstance(status, dict) and not status.get("configured"):
+                api_call("POST", "/api/admin/setup", json={"password": password})
+            result = api_call("POST", "/api/admin/unlock", json={"password": password})
+            if isinstance(result, dict) and result.get("unlock_token"):
+                st.session_state["admin_token"] = result["unlock_token"]
+                st.session_state["lock_required"] = False
+                st.success("已解鎖（15 分鐘無操作會自動上鎖）。")
+                st.rerun()
+        except Exception:
+            pass
+    if st.session_state.get("lock_required"):
+        st.stop()
 
 
 def admin_headers() -> dict[str, str]:
@@ -59,6 +89,8 @@ def render_overview() -> None:
             if location:
                 caption += f" · 📍 {location}"
             left.caption(caption)
+            if camera.get("snapshot_url"):
+                left.image(f"{API_BASE}{camera['snapshot_url']}", width=240)
             right.write(camera.get("connection_type", "lan").upper())
     geo_points = [
         {"name": item.get("name", "Camera"), "lat": item["latitude"], "lon": item["longitude"]}
@@ -138,6 +170,20 @@ def main() -> None:
     health = api_call("GET", "/api/health")
     if health:
         st.success(f"Backend healthy · go2rtc {health.get('go2rtc', {}).get('message', 'unknown')}")
+    status = api_call("GET", "/api/admin/status")
+    unlocked = (isinstance(status, dict) and status.get("configured")
+                and bool(st.session_state.get("admin_token"))
+                and not st.session_state.get("lock_required"))
+    if not unlocked:
+        render_lock_gate()
+        st.info("儀表板平時上鎖：解鎖後才會載入相機資料；15 分鐘無操作自動上鎖。")
+        return
+    header_left, header_right = st.columns([4, 1])
+    with header_right:
+        if st.button("🔒 Lock now"):
+            st.session_state.pop("admin_token", None)
+            st.session_state["lock_required"] = False
+            st.rerun()
     tab1, tab2, tab3 = st.tabs(["Dashboard", "External Scan", "Authorized Public Scan"])
     with tab1:
         render_overview()

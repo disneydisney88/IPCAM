@@ -2,10 +2,11 @@ import { useEffect, useMemo } from 'react'
 import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { Camera as CameraIcon, Globe, MapPin, MonitorPlay } from 'lucide-react'
-import type { Camera } from '../types'
+import type { Camera, CameraTelemetry } from '../types'
 
 interface Props {
   cameras: Camera[]
+  telemetryMap?: Record<number, CameraTelemetry>
   onFullscreen: (camera: Camera) => void
 }
 
@@ -24,7 +25,7 @@ function FitBounds({ points }: { points: Array<[number, number]> }) {
   return null
 }
 
-export function CameraMapView({ cameras, onFullscreen }: Props) {
+export function CameraMapView({ cameras, telemetryMap, onFullscreen }: Props) {
   const pinned = useMemo(
     () => cameras.filter(camera => camera.latitude != null && camera.longitude != null),
     [cameras],
@@ -48,18 +49,16 @@ export function CameraMapView({ cameras, onFullscreen }: Props) {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
           <FitBounds points={points} />
-          {pinned.map(camera => (
-            <CircleMarker
-              key={camera.id}
-              center={[camera.latitude!, camera.longitude!]}
-              radius={9}
-              pathOptions={{
-                color: camera.status === 'LIVE' ? '#39d98a' : '#ff5e6d',
-                fillColor: camera.status === 'LIVE' ? '#39d98a' : '#ff5e6d',
-                fillOpacity: 0.55,
-                weight: 2,
-              }}
-            >
+          {pinned.map(camera => {
+            const online = telemetryMap?.[camera.id] ? telemetryMap[camera.id].online : camera.status === 'LIVE'
+            const color = online ? '#39d98a' : '#ff5e6d'
+            return (
+              <CircleMarker
+                key={camera.id}
+                center={[camera.latitude!, camera.longitude!]}
+                radius={9}
+                pathOptions={{ color, fillColor: color, fillOpacity: 0.55, weight: 2 }}
+              >
               <Popup>
                 <div className="map-popup">
                   <strong>{camera.name}</strong>
@@ -74,8 +73,9 @@ export function CameraMapView({ cameras, onFullscreen }: Props) {
                   <button onClick={() => onFullscreen(camera)}><MonitorPlay size={12} />Open Live View</button>
                 </div>
               </Popup>
-            </CircleMarker>
-          ))}
+              </CircleMarker>
+            )
+          })}
         </MapContainer>
         {!pinned.length && (
           <div className="map-empty">
