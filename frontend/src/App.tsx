@@ -6,12 +6,14 @@ import type { Area, Camera, CameraTelemetry, GridPosition, LiveStream, NetworkIn
 import { Sidebar, type Section } from './components/Sidebar'
 import { CameraGrid } from './components/CameraGrid'
 import { CameraMapView } from './components/CameraMapView'
+import { LiveWall } from './components/LiveWall'
 import { LockScreen } from './components/LockScreen'
 import { ScanPanel } from './components/ScanPanel'
 import { SettingsPanel } from './components/SettingsPanel'
 import { AddCameraWizard } from './components/AddCameraWizard'
 
-const gridSizes = [1, 4, 9, 16] as const
+const gridSizes = [1, 4, 6, 9, 12, 16] as const
+type GridSize = (typeof gridSizes)[number]
 
 export default function App() {
   const mock = new URLSearchParams(location.search).get('mock') === 'true'
@@ -20,7 +22,8 @@ export default function App() {
   const [views, setViews] = useState<SavedView[]>([])
   const [interfaces, setInterfaces] = useState<NetworkInterface[]>([])
   const [cidr, setCidr] = useState('192.168.1.0/24')
-  const [gridSize, setGridSize] = useState<1 | 4 | 9 | 16>(4)
+  const [gridSize, setGridSize] = useState<GridSize>(4)
+  const [liveWall, setLiveWall] = useState(false)
   const [section, setSection] = useState<Section>({ type: 'all' })
   const [search, setSearch] = useState('')
   const [layout, setLayout] = useState<GridPosition[]>([])
@@ -236,7 +239,7 @@ export default function App() {
       const positions = layout.length ? layout : filtered.map((camera, index) => ({ i: String(camera.id), x: (index % 2) * 6, y: Math.floor(index / 2) * 7, w: 6, h: 7 }))
       await api.createView({
         name: name.trim(),
-        grid_size: gridSize,
+        grid_size: (gridSize === 6 ? 4 : gridSize === 12 ? 9 : gridSize) as 1 | 4 | 9 | 16,
         filters: section.type === 'area' ? { area_id: section.id } : {},
         stream_preference: 'sub',
         items: filtered.map((camera, position) => {
@@ -320,18 +323,27 @@ export default function App() {
             ) : (
               <>
                 <section className="view-toolbar">
-                  <div className="grid-picker">
-                    <span>VIEW</span>
-                    {gridSizes.map(size => (
-                      <button key={size} className={gridSize === size ? 'active' : ''} onClick={() => { setGridSize(size); setRestoredLayout(undefined) }}>
-                        {size}
-                      </button>
-                    ))}
-                  </div>
-                  <div className={`gateway-state ${gateway.running ? 'ready' : ''}`}><i />{gateway.message}</div>
+              <div className="grid-picker">
+                <span>VIEW</span>
+                {gridSizes.map(size => (
+                  <button key={size} className={gridSize === size ? 'active' : ''} onClick={() => { setGridSize(size); setRestoredLayout(undefined) }}>
+                    {size}
+                  </button>
+                ))}
+              </div>
+              <button className={`secondary live-wall-toggle ${liveWall ? 'active' : ''}`} onClick={() => setLiveWall(value => !value)} title="Multi-camera live stream wall">
+                <MonitorPlay size={15} />Live Wall
+              </button>
+              <div className={`gateway-state ${gateway.running ? 'ready' : ''}`}><i />{gateway.message}</div>
                 </section>
                 {section.type === 'all' && summary && <section className="dashboard-summary"><div><strong>{summary.total_cameras}</strong><span>Total Cameras</span></div><div><strong>{summary.online}</strong><span>Online</span></div><div><strong>{summary.offline}</strong><span>Offline</span></div><div><strong>{summary.last_scan ? new Date(summary.last_scan).toLocaleString() : 'Never'}</strong><span>Last Scan</span></div><div><strong>{summary.scheduler.state}</strong><span>Scheduler</span></div><div><strong>{summary.recent_discoveries.length}</strong><span>Recent Discoveries</span></div><div><strong>{summary.recent_offline.length}</strong><span>Recent Offline</span></div><div><strong>{summary.recent_scan_jobs.length}</strong><span>Recent Scan Jobs</span></div><div><strong>{summary.public_scan.state}</strong><span>Public Scan</span></div><div><strong>{summary.go2rtc.message}</strong><span>go2rtc</span></div></section>}
-                {filtered.length ? (
+                {liveWall ? (
+                  <LiveWall
+                    cameras={filtered}
+                    columns={gridSize <= 4 ? 2 : gridSize <= 9 ? 3 : 4}
+                    onFullscreen={setFullscreen}
+                  />
+                ) : filtered.length ? (
                   <CameraGrid
                     cameras={filtered}
                     gridSize={gridSize}

@@ -13,7 +13,14 @@ import httpx
 import streamlit as st
 
 
-API_BASE = os.getenv("IPCAM_API_BASE_URL", "http://127.0.0.1:8080").rstrip("/")
+API_BASE_DEFAULT = os.getenv("IPCAM_API_BASE_URL", "http://127.0.0.1:8080").rstrip("/")
+API_BASE = API_BASE_DEFAULT
+
+
+def set_api_base(url: str) -> None:
+    """Override the backend base for this session (e.g. a new tunnel URL)."""
+    global API_BASE
+    API_BASE = (url or API_BASE_DEFAULT).rstrip("/")
 
 
 def api_call(method: str, path: str, **kwargs: Any) -> Any:
@@ -182,6 +189,18 @@ def render_authorized_scan() -> None:
 
 def main() -> None:
     st.set_page_config(page_title="IPCAM Dashboard", page_icon="📹", layout="wide")
+    override = st.sidebar.text_input(
+        "Backend URL 臨時覆寫",
+        value=st.session_state.get("api_base_override", ""),
+        placeholder=API_BASE_DEFAULT,
+        help="隧道網址變了？在這裡貼新網址即可，不用進 Settings 改 Secrets。",
+    )
+    if override.strip() != st.session_state.get("api_base_override", ""):
+        st.session_state["api_base_override"] = override.strip()
+        st.rerun()
+    set_api_base(st.session_state.get("api_base_override", ""))
+    st.sidebar.caption(f"使用中：{API_BASE}")
+
     st.title("IPCAM Scanner + Multi-Camera Dashboard")
     st.caption(f"FastAPI backend: {API_BASE}")
     health = api_call("GET", "/api/health")

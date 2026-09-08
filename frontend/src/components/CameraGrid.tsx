@@ -6,7 +6,7 @@ import { CameraCard } from './CameraCard'
 
 interface Props {
   cameras: Camera[]
-  gridSize: 1 | 4 | 9 | 16
+  gridSize: 1 | 4 | 6 | 9 | 12 | 16
   gatewayReady: boolean
   restoredLayout?: GridPosition[]
   layoutEditMode: boolean
@@ -18,10 +18,10 @@ interface Props {
   onGeoRefresh?: (camera: Camera) => void
 }
 
-function buildLayout(cameras: Camera[], gridSize: 1 | 4 | 9 | 16, restoredLayout?: GridPosition[]) {
-  const columns = gridSize === 1 ? 1 : gridSize === 4 ? 2 : gridSize === 9 ? 3 : 4
+function buildLayout(cameras: Camera[], gridSize: 1 | 4 | 6 | 9 | 12 | 16, restoredLayout?: GridPosition[]) {
+  const columns = gridSize === 1 ? 1 : gridSize === 16 ? 4 : gridSize === 12 ? 3 : gridSize === 9 ? 3 : 2
   const width = 12 / columns
-  const height = gridSize === 1 ? 11 : gridSize === 4 ? 8 : 6
+  const height = gridSize === 1 ? 11 : gridSize === 4 || gridSize === 6 ? 8 : gridSize === 12 ? 5 : 6
   const restoredById = new Map((restoredLayout || []).map(item => [item.i, item]))
 
   return cameras.map((camera, index) => {
