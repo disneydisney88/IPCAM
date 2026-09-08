@@ -45,3 +45,6 @@ Thumbs.db
 desktop.ini
 .idea/
 .vscode/
+
+# Cloudflare tunnel binary (downloaded at runtime)
+tools/cloudflared/
