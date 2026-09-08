@@ -119,6 +119,25 @@ def test_snapshot_endpoints_on_mock_and_missing(client):
     assert client.get(f"/api/cameras/{mock_camera['id']}/snapshot.jpg").status_code == 404
 
 
+def test_credential_bulk_import_matches_by_ip(client):
+    created = client.post("/api/cameras", json={"name": "Cred Import", "ip": "192.168.77.10"})
+    camera_id = created.json()["id"]
+    content = "ip,username,password,rtsp_path,stream_kind\n"
+    content += "192.168.77.10, admin, Sup3r-Secret!, /Streaming/Channels/101, main\n"
+    content += "192.168.77.99, ghost, nope\n"
+    result = client.post("/api/cameras/import-credentials", json={"content": content})
+    assert result.status_code == 200
+    body = result.json()
+    assert body["matched"] == 1
+    assert body["updated"] == 1
+    assert len(body["errors"]) == 1 and body["errors"][0]["row"] == 3
+    status = client.get(f"/api/cameras/{camera_id}/credentials").json()
+    assert status["configured"] is True and "main" in status["stream_kinds"]
+    specs = next(item for item in client.get("/api/cameras").json() if item["id"] == camera_id)["model_specs"]
+    assert specs["rtsp_path_main"] == "/Streaming/Channels/101"
+    client.delete(f"/api/cameras/{camera_id}")
+
+
 def test_mock_data_carries_geo_and_spec_tags(client):
     client.post("/api/mock/ensure")
     cameras = client.get("/api/cameras").json()

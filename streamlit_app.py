@@ -65,6 +65,22 @@ def admin_headers() -> dict[str, str]:
     return {"X-Admin-Unlock": token} if token else {}
 
 
+def render_credential_import() -> None:
+    with st.expander("🔑 匯入相機密碼（CSV / TXT 批次）"):
+        st.caption(
+            "每行一組：`ip, username, password, rtsp_path(可省), stream_kind(可省 sub|main)`，"
+            "可用逗號／分號／TAB 分隔，第一行標題會自動略過。範例：`192.168.1.101, admin, S3cure!pass, /Streaming/Channels/101`"
+        )
+        upload = st.file_uploader("選擇 .txt 或 .csv 檔案", type=["txt", "csv"], key="cred_import")
+        if upload is not None and st.button("開始匯入"):
+            content = upload.getvalue().decode("utf-8-sig", errors="replace")
+            result = api_call("POST", "/api/cameras/import-credentials", json={"content": content})
+            if result:
+                st.success(f"匹配 {result.get('matched', 0)} 台 · 更新 {result.get('updated', 0)} 組憑證 · 錯誤 {len(result.get('errors', []))}")
+                for item in result.get("errors", [])[:10]:
+                    st.warning(f"第 {item['row']} 行：{item['error']}")
+
+
 def render_overview() -> None:
     st.subheader("Camera Dashboard")
     summary = api_call("GET", "/api/dashboard/summary")
@@ -102,6 +118,7 @@ def render_overview() -> None:
         st.map(geo_points, latitude="lat", longitude="lon", size=500_000)
     else:
         st.caption("目前沒有帶地理座標的攝影機；對公網目標執行外部掃描後即會出現。")
+    render_credential_import()
 
 
 def render_external_scan() -> None:

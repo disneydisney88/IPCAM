@@ -116,6 +116,10 @@ class CameraCredentialInput(BaseModel):
     stream_kind: Literal["main", "sub"] = "sub"
 
 
+class CredentialImportInput(BaseModel):
+    content: str = Field(min_length=1, max_length=200_000)
+
+
 class AdminPasswordInput(BaseModel):
     password: str = Field(min_length=12, max_length=500)
 

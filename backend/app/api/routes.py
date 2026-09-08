@@ -4,6 +4,7 @@ import asyncio
 import csv
 import io
 import json
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -15,7 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.schemas import (
-    AdminPasswordInput, AllowlistImportInput, AreaInput, CameraCredentialInput, CameraInput, CameraUpdate, ExternalScanInput, ExternalTargetInput,
+    AdminPasswordInput, AllowlistImportInput, AreaInput, CameraCredentialInput, CameraInput, CameraUpdate, CredentialImportInput, ExternalScanInput, ExternalTargetInput,
     FavoriteInput, GroupInput, GroupMembersInput, PublicScanInput, SavedViewInput, ScanInput, SchedulerUpdateInput, ShodanKeyInput,
 )
 from app.database.core import get_db, session_scope
@@ -335,6 +336,54 @@ def set_camera_credentials(camera_id: int, payload: CameraCredentialInput, db: S
                  details={"stream_kind": payload.stream_kind})
     db.commit()
     return {"configured": True, "stream_kind": payload.stream_kind}
+
+
+@router.post("/cameras/import-credentials")
+def import_camera_credentials(payload: CredentialImportInput, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Bulk-import per-camera RTSP credentials from CSV/TXT text.
+
+    Rows: ip_or_host, username, password[, rtsp_path[, stream_kind]] separated
+    by comma, semicolon or tab. An optional header line is skipped. Passwords
+    never appear in responses or audit details.
+    """
+    matched = updated = 0
+    errors: list[dict[str, Any]] = []
+    touched: list[str] = []
+    lines = [line.strip() for line in payload.content.splitlines() if line.strip()]
+    for index, line in enumerate(lines, start=1):
+        cells = [cell.strip() for cell in re.split(r"[;,\t]", line)]
+        if index == 1 and len(cells) >= 3 and "user" in cells[1].lower():
+            continue
+        if len(cells) < 3:
+            errors.append({"row": index, "error": "Need at least ip, username, password"})
+            continue
+        target, username, password = cells[0], cells[1], cells[2]
+        rtsp_path = cells[3] if len(cells) >= 4 and cells[3] else "/"
+        stream_kind = cells[4] if len(cells) >= 5 and cells[4] in ("main", "sub") else "sub"
+        camera = db.scalar(select(Camera).where((Camera.ip == target) | (Camera.host == target)))
+        if not camera:
+            errors.append({"row": index, "error": f"No camera with ip/host {target}"})
+            continue
+        reference = credential_store.put(f"camera-{camera.id}-{stream_kind}", username, password)
+        stream = db.scalar(select(CameraStream).where(CameraStream.camera_id == camera.id, CameraStream.kind == stream_kind))
+        old_reference = stream.rtsp_uri_secret_ref if stream else None
+        if not stream:
+            stream = CameraStream(camera_id=camera.id, kind=stream_kind)
+            db.add(stream)
+        stream.rtsp_uri_secret_ref = reference
+        specs = dict(camera.model_specs or {})
+        specs[f"rtsp_path_{stream_kind}"] = rtsp_path
+        camera.model_specs = specs
+        if old_reference and old_reference != reference:
+            credential_store.delete(old_reference)
+        matched += 1
+        updated += 1
+        touched.append(camera.name)
+    db.commit()
+    if touched:
+        record_audit(db, "camera.credentials_imported", details={"matched": matched, "updated": updated, "cameras": touched[:20]})
+        db.commit()
+    return {"matched": matched, "updated": updated, "errors": errors}
 
 
 @router.get("/cameras/{camera_id}/credentials")
