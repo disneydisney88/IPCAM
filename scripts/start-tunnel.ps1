@@ -8,12 +8,17 @@ param(
 # works from outside your network. URLs change on every run of this script.
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$Exe = if ($CloudflaredPath) { $CloudflaredPath } else { Join-Path $ProjectRoot 'tools\cloudflared\cloudflared.exe' }
+# Prefer a local-disk copy: running the exe from a cloud-synced folder (Drive)
+# can crash with in-page errors when the sync service locks the file.
+$LocalExe = Join-Path $env:LOCALAPPDATA 'IPCAM\tools\cloudflared\cloudflared.exe'
+$DriveExe = Join-Path $ProjectRoot 'tools\cloudflared\cloudflared.exe'
+$Exe = if ($CloudflaredPath) { $CloudflaredPath } elseif (Test-Path -LiteralPath $LocalExe) { $LocalExe } else { $DriveExe }
 
 if (-not (Test-Path -LiteralPath $Exe)) {
-    Write-Host "[..] Downloading cloudflared to tools\cloudflared\ ..." -ForegroundColor Cyan
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Exe) | Out-Null
-    Invoke-WebRequest -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile $Exe
+    Write-Host "[..] Downloading cloudflared to local storage ..." -ForegroundColor Cyan
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LocalExe) | Out-Null
+    Invoke-WebRequest -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile $LocalExe
+    $Exe = $LocalExe
 }
 
 try { $health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health" -TimeoutSec 2 } catch { $health = $null }
