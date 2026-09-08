@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -129,7 +130,8 @@ class Go2RTCManager:
         return name
 
     def player_url(self, stream_name: str) -> str:
-        return f"{settings.go2rtc_api}/stream.html?src={stream_name}&mode=webrtc"
+        mode = os.environ.get("IPCAM_GO2RTC_MODE", "webrtc")
+        return f"{settings.go2rtc_api}/stream.html?src={stream_name}&mode={mode}"
 
     def reload(self) -> bool:
         if not self.available:

@@ -31,6 +31,7 @@ from app.services.allowlist import parse_allowlist
 from app.services.admin_auth import admin_auth
 from app.services.audit import record_audit
 from app.services.credentials import credential_store
+from app.services import credential_book
 from app.services.geoip import resolve_ip_location
 from app.services.scheduler import scheduler
 from app.services.public_scan import public_scanner
@@ -298,6 +299,9 @@ def create_camera(payload: CameraInput, db: Session = Depends(get_db)) -> dict[s
         db.rollback()
         raise HTTPException(409, "Camera identity already exists") from exc
     db.refresh(camera)
+    if credential_book.apply_book_for_camera(db, camera):
+        db.commit()
+        db.refresh(camera)
     return camera_to_dict(camera)
 
 
@@ -384,6 +388,34 @@ def import_camera_credentials(payload: CredentialImportInput, db: Session = Depe
         record_audit(db, "camera.credentials_imported", details={"matched": matched, "updated": updated, "cameras": touched[:20]})
         db.commit()
     return {"matched": matched, "updated": updated, "errors": errors}
+
+
+@router.get("/credentials/book")
+def get_credential_book(db: Session = Depends(get_db)) -> dict[str, Any]:
+    return credential_book.book_summary(db)
+
+
+@router.post("/credentials/book/import")
+def import_credential_book(payload: CredentialImportInput, replace: bool = Query(default=True), db: Session = Depends(get_db)) -> dict[str, Any]:
+    result = credential_book.import_book(db, payload.content, replace=replace)
+    record_audit(db, "camera.book_imported", details={"added": result["added"], "total": result["total"], "rejected": len(result["errors"])})
+    db.commit()
+    return result
+
+
+@router.post("/credentials/book/apply")
+def apply_credential_book(db: Session = Depends(get_db)) -> dict[str, Any]:
+    result = credential_book.apply_book_all(db)
+    record_audit(db, "camera.book_applied", details={"matched": result["matched"], "cameras": result["cameras"]})
+    db.commit()
+    return result
+
+
+@router.delete("/credentials/book", status_code=204)
+def clear_credential_book(db: Session = Depends(get_db)) -> None:
+    credential_book.clear_book(db)
+    record_audit(db, "camera.book_cleared", details={})
+    db.commit()
 
 
 @router.get("/cameras/{camera_id}/credentials")

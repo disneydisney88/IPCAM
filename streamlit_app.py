@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 API_BASE_DEFAULT = os.getenv("IPCAM_API_BASE_URL", "http://127.0.0.1:8080").rstrip("/")
@@ -88,6 +89,99 @@ def render_credential_import() -> None:
                     st.warning(f"第 {item['row']} 行：{item['error']}")
 
 
+def render_automation() -> None:
+    st.subheader("自動化流水線：IP 清單 → 排程掃描 → 自動套密碼 → Live")
+    st.caption("設定一次即可：之後掃描發現配對 IP 的相機時會**自動套用帳密**，Live 立刻可播。只對你擁有或獲授權的相機使用。")
+
+    left, right = st.columns(2)
+
+    with left:
+        st.markdown("### 1️⃣ 密碼清單（持久保存）")
+        st.caption("格式：`ip, username, password, rtsp_path(可省), stream_kind(可省 sub|main)`。密碼以 DPAPI 加密保存。")
+        up = st.file_uploader("上傳密碼清單（CSV/TXT）", type=["txt", "csv"], key="book_import")
+        replace = st.checkbox("取代現有清單", value=True, key="book_replace")
+        if up is not None and st.button("匯入密碼清單", key="book_go"):
+            content = up.getvalue().decode("utf-8-sig", errors="replace")
+            result = api_call("POST", f"/api/credentials/book/import?replace={str(replace).lower()}", json={"content": content})
+            if result:
+                st.success(f"新增 {result.get('added', 0)} 筆 · 總計 {result.get('total', 0)} 筆 · 錯誤 {len(result.get('errors', []))}")
+                for item in result.get("errors", [])[:8]:
+                    st.warning(f"{item.get('row') or '—'}：{item['error']}")
+                st.rerun()
+        book = api_call("GET", "/api/credentials/book")
+        if isinstance(book, dict) and book.get("entries"):
+            st.dataframe([
+                {"IP/Host": e["target"], "帳號": e["username"], "RTSP 路徑": e["rtsp_path"],
+                 "串流": e["stream_kind"], "已配對相機ID": e["camera_id"] or "—"}
+                for e in book["entries"]
+            ], use_container_width=True)
+            b1, b2 = st.columns(2)
+            if b1.button("立即套用到相機"):
+                result = api_call("POST", "/api/credentials/book/apply")
+                if result:
+                    st.success(f"已套用 {result.get('matched', 0)} 台：{', '.join(result.get('cameras', [])[:10])}")
+            if b2.button("清空密碼清單"):
+                api_call("DELETE", "/api/credentials/book")
+                st.rerun()
+        else:
+            st.info("密碼清單目前是空的。")
+
+    with right:
+        st.markdown("### 2️⃣ IP 清單（授權目標）")
+        st.caption("外部掃描與排程只會碰這份清單裡 enabled 的目標。")
+        up2 = st.file_uploader("上傳 IP 清單（CSV/TXT）", type=["txt", "csv"], key="allow_import")
+        if up2 is not None and st.button("匯入 IP 清單", key="allow_go"):
+            content = up2.getvalue().decode("utf-8-sig", errors="replace")
+            fmt = "json" if content.strip().startswith("[") else "csv"
+            result = api_call("POST", "/api/external-targets/import", json={"format": fmt, "content": content})
+            if result:
+                st.success(f"新增 {result.get('created', 0)} · 更新 {result.get('updated', 0)} · 拒絕 {result.get('rejected', 0)}")
+                st.rerun()
+        targets = api_call("GET", "/api/external-targets") or []
+        if targets:
+            st.dataframe([
+                {"名稱": t["name"], "Host": t["host"], "啟用": "✅" if t["enabled"] else "❌",
+                 "最後掃描": (t.get("last_scan") or "—")[:19], "城市": t.get("city") or "—"}
+                for t in targets
+            ], use_container_width=True)
+        else:
+            st.info("尚無授權目標。")
+
+        st.markdown("### 3️⃣ 排程自動掃描")
+        sched = api_call("GET", "/api/scheduler")
+        if isinstance(sched, dict):
+            st.caption(f"目前：{'啟用' if sched.get('enabled') else '停用'} · 每 {sched.get('interval_minutes')} 分鐘 · "
+                       f"{sched.get('scan_mode')} 模式 · 狀態 {sched.get('state')}")
+            cols = st.columns(3)
+            interval = cols[0].number_input("間隔（分鐘）", min_value=5, max_value=10080,
+                                            value=int(sched.get("interval_minutes") or 60), key="sched_interval")
+            mode = cols[1].selectbox("模式", ["quick", "deep"],
+                                     index=0 if sched.get("scan_mode") == "quick" else 1, key="sched_mode")
+            timeout = cols[2].number_input("單目標逾時（秒）", min_value=2, max_value=300,
+                                           value=int(sched.get("target_timeout_seconds") or 15), key="sched_timeout")
+            a, b, c = st.columns(3)
+            if a.button("啟用排程"):
+                api_call("PUT", "/api/scheduler", json={"enabled": True, "interval_minutes": int(interval),
+                                                        "scan_mode": mode, "target_timeout_seconds": int(timeout)})
+                st.rerun()
+            if b.button("立即掃一次"):
+                with st.spinner("掃描中…"):
+                    result = api_call("POST", "/api/scheduler/run")
+                if result:
+                    st.success(f"成功 {result.get('succeeded', 0)} · 失敗 {result.get('failed', 0)} · 取消 {result.get('cancelled', 0)}")
+            if c.button("停用排程"):
+                api_call("PUT", "/api/scheduler", json={"enabled": False, "interval_minutes": int(interval),
+                                                        "scan_mode": mode, "target_timeout_seconds": int(timeout)})
+                st.rerun()
+
+    st.markdown("### 4️⃣ 看結果（Live）")
+    st.markdown(
+        "- 單台：Dashboard 分頁每台相機的 **▶ 即時影像** 按鈕\n"
+        "- 多畫面：React 儀表板（隧道網址或 127.0.0.1:8080）的 **Live Wall**，支援 1/4/6/9/12/16 宮格\n"
+        "- 🔒 只對你擁有或獲授權的相機使用；系統不提供隨機掃描或密碼猜測。"
+    )
+
+
 def render_overview() -> None:
     st.subheader("Camera Dashboard")
     summary = api_call("GET", "/api/dashboard/summary")
@@ -115,6 +209,21 @@ def render_overview() -> None:
             if camera.get("snapshot_url"):
                 left.image(f"{API_BASE}{camera['snapshot_url']}", width=240)
             right.write(camera.get("connection_type", "lan").upper())
+            camera_id = camera.get("id")
+            if st.button("▶ 即時影像", key=f"live_{camera_id}"):
+                st.session_state["live_camera"] = None if st.session_state.get("live_camera") == camera_id else camera_id
+                st.rerun()
+            if st.session_state.get("live_camera") == camera_id:
+                if camera.get("is_mock"):
+                    st.info("示範相機（mock）沒有真實串流；新增你真實的相機後即可播放。")
+                else:
+                    live = api_call("GET", f"/api/cameras/{camera_id}/live")
+                    if live and live.get("available") and live.get("player_url"):
+                        st.caption(f"串流模式：{live.get('state', 'ready')}")
+                        components.iframe(live["player_url"], height=420, scrolling=False)
+                    else:
+                        reason = live.get("message") if isinstance(live, dict) else "後端無回應"
+                        st.warning(f"無法播放：{reason}。需要：①先為此相機設定 RTSP 憑證 ②go2rtc READY ③若從外部觀看，需為 1984 埠開隧道並設定 IPCAM_GO2RTC_API 與 IPCAM_GO2RTC_MODE=hls。")
     geo_points = [
         {"name": item.get("name", "Camera"), "lat": item["latitude"], "lon": item["longitude"]}
         for item in visible
@@ -220,13 +329,15 @@ def main() -> None:
             st.session_state.pop("admin_token", None)
             st.session_state["lock_required"] = False
             st.rerun()
-    tab1, tab2, tab3 = st.tabs(["Dashboard", "External Scan", "Authorized Public Scan"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Dashboard", "External Scan", "Authorized Public Scan", "⚙️ 自動化"])
     with tab1:
         render_overview()
     with tab2:
         render_external_scan()
     with tab3:
         render_authorized_scan()
+    with tab4:
+        render_automation()
 
 
 if __name__ == "__main__":

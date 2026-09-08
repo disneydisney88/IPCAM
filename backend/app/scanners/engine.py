@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.database.core import session_scope
 from app.models import Camera, ScanSession
 from app.scanners.onvif import ws_discover
+from app.services import credential_book
 from app.services.identity import camera_identity
 from app.services.network import validate_private_cidr
 
@@ -120,6 +121,10 @@ class ScanCoordinator:
             camera.http_port = next((p for p in ports if p in (80, 443, 8080)), None)
             camera.rtsp_port = next((p for p in ports if p in (554, 8554)), None)
             camera.last_seen = datetime.now(timezone.utc)
+            try:
+                credential_book.apply_book_for_camera(db, camera)
+            except Exception:
+                pass  # auto-apply is best-effort; never break the scan
 
     def _update(self, scan_id: int, checked: int, candidates: int, onvif: int, streams: int) -> None:
         with session_scope() as db:
