@@ -27,6 +27,9 @@ def set_api_base(url: str) -> None:
 def api_call(method: str, path: str, **kwargs: Any) -> Any:
     """Call the local FastAPI service and turn errors into readable UI text."""
     headers = dict(kwargs.pop("headers", None) or {})
+    # Skip free-tunnel reminder pages (localtunnel/ngrok) for API calls.
+    headers.setdefault("bypass-tunnel-reminder", "1")
+    headers.setdefault("ngrok-skip-browser-warning", "1")
     token = st.session_state.get("admin_token")
     if token:
         headers.setdefault("X-Admin-Unlock", str(token))
