@@ -35,7 +35,8 @@ function Start-Backend {
 }
 
 function Start-Lt([int]$port, [string]$sub, [string]$key) {
-    $npx = (Get-Command npx -ErrorAction SilentlyContinue).Source
+    $npx = (Get-Command npx.cmd -ErrorAction SilentlyContinue).Source
+    if (-not $npx) { $npx = (Get-Command npx -ErrorAction SilentlyContinue).Source }
     if (-not $npx) { Log 'npx missing - cannot start tunnel'; return }
     $log = Join-Path $env:TEMP "ipcam-lt-$key.log"
     $err = Join-Path $env:TEMP "ipcam-lt-$key-err.log"
